@@ -1,0 +1,33 @@
+; Engine configuration file.
+; Avalon Siege — gather, build, and break the Dread Citadel.
+
+config_version=5
+
+[application]
+
+config/name="Avalon Siege"
+config/description="Leave your castle, brave the maze, gather resources and destroy the Dread Citadel."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/dpi/allow_hidpi=false
+
+[physics]
+
+common/physics_ticks_per_second=30
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=0
+lights_and_shadows/directional_shadow/size=1024
+textures/default_filters/anisotropic_filtering_level=0
+environment/defaults/default_clear_color=Color(0.06, 0.08, 0.06, 1)
