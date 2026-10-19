@@ -15,6 +15,9 @@ const UPGRADES := [
 	{"key": "shrine", "name": "Shrine", "desc": "+1 potion, +1 HP/s, +10% move", "cost": 40},
 ]
 const MAX_LEVEL := 5
+## The royal steward's priorities: lower builds sooner (miners and towers first).
+const BIAS := {"miners": -1.0, "towers": -0.4, "warcamp": -0.1, "forge": 0.2, "walls": 0.3,
+	"barracks": 0.4, "mage": 0.5, "armory": 0.6, "shrine": 0.7}
 const DELIVER_R := 9.5
 const BASE_HP := 1500.0
 const TOWER_TILES := [Vector2i(-3, 0), Vector2i(0, -3), Vector2i(-3, -3), Vector2i(-3, 3), Vector2i(3, -3)]
@@ -108,6 +111,46 @@ func buy(key: String) -> bool:
 	return true
 
 
+## What the steward is saving for next ("" when everything is built).
+func next_key() -> String:
+	if hp < max_hp * 0.5 and level("walls") < MAX_LEVEL:
+		return "walls"
+	var best := ""
+	var bs := INF
+	for u in UPGRADES:
+		var k: String = u.key
+		if level(k) >= MAX_LEVEL:
+			continue
+		var sc: float = level(k) + BIAS[k] + cost_of(k) * 0.0001
+		if sc < bs:
+			bs = sc
+			best = k
+	return best
+
+
+func upgrade_name(key: String) -> String:
+	for u in UPGRADES:
+		if u.key == key:
+			return u.name
+	return key
+
+
+func _steward() -> void:
+	var k := next_key()
+	if k == "" or gold < cost_of(k):
+		return
+	if buy(k):
+		game.hud.message("Camelot builds %s (level %d) — %s" % [upgrade_name(k), level(k), _desc(k)], 3.5, Color(0.7, 1, 0.7))
+		game.sfx.play("build", 0.0, 0.1, 0.0)
+
+
+func _desc(key: String) -> String:
+	for u in UPGRADES:
+		if u.key == key:
+			return u.desc
+	return ""
+
+
 func ally_power() -> float:
 	return 1.0 + 0.25 * level("barracks") + 0.15 * level("forge")
 
@@ -154,6 +197,7 @@ func deliver(hero: Hero) -> void:
 
 func update(dt: float) -> void:
 	hit_flash = maxf(0.0, hit_flash - dt)
+	_steward()
 	hp = minf(max_hp, hp + dt * (1.5 + level("walls") * 1.0))
 	var t_lv := level("towers")
 	var dmg_mult := game.hero.dmg_mult

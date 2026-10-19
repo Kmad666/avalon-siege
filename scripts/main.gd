@@ -4,8 +4,14 @@ extends Node3D
 
 static var inst: Game
 static var skip_title := false
+static var diff_idx := 1
 
-const CITADEL_HP := 6000.0
+const CITADEL_HP := 16000.0
+const DIFFS := [
+	{"name": "Squire", "mult": 0.75, "desc": "A gentler war. Foes are weaker."},
+	{"name": "Knight", "mult": 1.0, "desc": "The intended challenge."},
+	{"name": "Legend", "mult": 1.4, "desc": "The Dread Army at full strength."},
+]
 const FIRST_WAVE := 150.0
 const MINIBOSSES := [
 	{"name": "Gorm the Goblin King", "kind": "goblin", "scale": 2.3, "hp": 900.0, "tint": Color(1.0, 0.85, 0.35), "relic": {"name": "Goblin Hoard", "desc": "+35% gold from every coin", "stat": "gold"}},
@@ -20,6 +26,12 @@ var maze: Maze
 var horde: Horde
 var fx: FX
 var nodes: ResNodes
+var items: Items
+var marks: Landmarks
+var diff := 1.0
+var lord_spawned := false
+var dread_lord: Unit = null
+var _shield_msg_t := 0.0
 var castle: Castle
 var hero: Hero
 var hud: HUD
@@ -30,7 +42,7 @@ var world_env: WorldEnvironment
 var citadel: Node3D
 var citadel_gem: MeshInstance3D
 
-var state := "title"      # title | play | levelup | paused | over | won
+var state := "title"      # title | play | levelup | paused | travel | over | won
 var time := 0.0
 var play_time := 0.0
 var wave := 0
@@ -84,6 +96,9 @@ var stress := false
 var defend := false
 var war := false
 var ui_test := false
+var endgame_test := false
+var sim := false
+var _sim_wave := -1
 var _ui_step := 0
 var _bench_frames := 0
 var _bench_time := 0.0
@@ -99,6 +114,7 @@ func _ready() -> void:
 	var seed_v := randi()
 	if shot_dir != "":
 		seed_v = 12345
+	diff = DIFFS[diff_idx].mult
 	maze = Maze.new()
 	maze.generate(seed_v)
 	var world := Node3D.new()
@@ -116,6 +132,10 @@ func _ready() -> void:
 	add_child(nodes)
 	hero = Hero.new()
 	add_child(hero)
+	items = Items.new()
+	add_child(items)
+	marks = Landmarks.new()
+	add_child(marks)
 	fx.setup(self)
 	castle.setup(self)
 	horde.setup(self)
@@ -127,6 +147,8 @@ func _ready() -> void:
 	hero.facing = PI * 1.25
 	_build_citadel()
 	_spawn_camps()
+	items.setup(self)
+	marks.setup(self)
 	camera = Camera3D.new()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = cam_size
@@ -141,6 +163,8 @@ func _ready() -> void:
 	layer.add_child(hud)
 	hud.setup(self)
 	_apply_quality()
+	if sim:
+		start()
 	if (skip_title or shot_dir != "" or bench) and not ui_test:
 		start()
 	if (shot_dir != "" or bench) and not ui_test:
@@ -170,6 +194,13 @@ func _parse_args() -> void:
 			autopilot = true
 		elif a.begins_with("--zoom="):
 			cam_size = float(a.substr(7))
+		elif a == "--sim":
+			sim = true
+			autopilot = true
+			Engine.time_scale = 6.0
+		elif a == "--endgame":
+			endgame_test = true
+			ui_test = true
 		elif a == "--ui":
 			ui_test = true
 		elif a == "--war":
@@ -299,7 +330,7 @@ func _spawn_minibosses() -> void:
 		u.tint = def.tint
 		u.scale = def.scale
 		u.r *= def.scale * 0.8
-		u.max_hp = def.hp * (1.0 + pick[0] * 0.6)
+		u.max_hp = def.hp * (1.0 + pick[0] * 0.6) * diff
 		u.hp = u.max_hp
 		u.dmg *= 2.2
 		u.xp = 40
@@ -309,9 +340,20 @@ func _spawn_minibosses() -> void:
 		minibosses.append(u)
 
 
+## Pick a difficulty on the title screen (rescales the Dread host already placed).
+func set_difficulty(i: int) -> void:
+	var r: float = DIFFS[i].mult / diff
+	diff_idx = i
+	diff = DIFFS[i].mult
+	for u in horde.enemies:
+		u.max_hp *= r
+		u.hp *= r
+		u.dmg *= 1.0 + (r - 1.0) * 0.6
+
+
 func start() -> void:
 	state = "play"
-	hud.message("Tip: hire Miners (3) and an Archer Tower (2), then explore. Spellbooks and mini-bosses hide in the maze.", 8.0, Color(1, 0.9, 0.6))
+	hud.message("Camelot builds on its own as gold flows in. Go mine, fight, capture shrines and loot!", 8.0, Color(1, 0.9, 0.6))
 
 
 # ------------------------------------------------------------- main loop
@@ -353,6 +395,7 @@ func _process(delta: float) -> void:
 	fx.render()
 	t = _p("r_fx", t)
 	nodes.render()
+	items.render()
 	_animate_citadel(dt)
 	_update_camera(dt, false)
 	hud.queue_redraw()
@@ -380,6 +423,8 @@ func _update_world(dt: float) -> void:
 	horde.update(dt)
 	t = _p("horde", t)
 	nodes.update(dt)
+	items.update(dt)
+	marks.update(dt)
 	fx.update(dt)
 	t = _p("fx", t)
 	_update_waves(dt)
@@ -441,12 +486,14 @@ func click_flow(p: Vector3) -> Vector3:
 
 ## Test autopilot: fight toward the citadel, go home to deliver when full.
 func autopilot_dir() -> Vector3:
-	if at_castle():
-		for i in Castle.UPGRADES.size():
-			if castle.can_afford(Castle.UPGRADES[i].key):
-				castle.buy(Castle.UPGRADES[i].key)
 	if war:
 		return Vector3.ZERO
+	if sim:
+		# Stay home and let the steward build.
+		var home2 := maze.castle_pos + Vector3(-2, 0, -7)
+		var to3 := home2 - hero.position
+		to3.y = 0
+		return to3.normalized() if to3.length() > 1.0 else Vector3.ZERO
 	if defend:
 		if play_time < 3.0:
 			castle.gold = 3000.0
@@ -486,7 +533,7 @@ func _update_waves(dt: float) -> void:
 	wave_t -= dt
 	if wave_t <= 0.0:
 		wave += 1
-		wave_t = maxf(85.0, 120.0 - wave * 2.5)
+		wave_t = maxf(80.0, 120.0 - wave * 2.0)
 		_queue_wave()
 	if not ally_queue.is_empty():
 		ally_t -= dt
@@ -507,25 +554,38 @@ func _update_waves(dt: float) -> void:
 			horde.spawn(s[1], p, "march", s[2], s[3])
 
 
+## The Dread Army grows through eras: wolves, then orcs and shamans, then the
+## undead and their necromancers, then ogres and Dark Knights.
+func _wave_kind() -> String:
+	var table := [["goblin", 70.0], ["wolf", 30.0]]
+	if wave >= 3: table.append(["orc", 35.0])
+	if wave >= 4: table.append(["shaman", 10.0])
+	if wave >= 6: table.append(["skeleton", 30.0])
+	if wave >= 8: table.append(["necro", 7.0])
+	if wave >= 10: table[0][1] = 30.0
+	var total := 0.0
+	for e in table: total += e[1]
+	var r := randf() * total
+	for e in table:
+		r -= e[1]
+		if r <= 0.0:
+			return e[0]
+	return "goblin"
+
+
 func _queue_wave() -> void:
-	var n := mini(3 + wave * 2, 50)
-	var power := 1.0 + 0.12 * wave
+	var n := mini(4 + int(wave * 2.6), 64)
+	var power := 1.0 + 0.14 * wave + 0.004 * wave * wave
 	var boss := wave % 5 == 0
 	for k in n:
-		var roll := randf()
-		var kind := "goblin"
-		if wave >= 2 and roll < 0.25 + 0.02 * wave:
-			kind = "orc"
-		elif wave >= 3 and roll < 0.45 + 0.02 * wave:
-			kind = "skeleton"
-		spawn_queue.append([0.25, kind, power, randf() < 0.04 * wave])
-	if wave >= 4:
-		for k in 1 + wave / 5:
+		spawn_queue.append([0.25, _wave_kind(), power, randf() < 0.04 * wave])
+	if wave >= 5:
+		for k in 1 + (wave - 5) / 4:
 			spawn_queue.append([0.4, "ogre", power, false])
 	if boss:
 		spawn_queue.append([0.5, "dark_knight", power, false])
 	# Camelot answers with a mirrored host, so the two armies meet mid-maze.
-	var apower := power * castle.army_power()
+	var apower := power * 0.85 * castle.army_power()
 	for s in spawn_queue:
 		ally_queue.append([s[0], Horde.MIRROR[s[1]], apower * (1.6 if s[3] else 1.0)])
 	for k in castle.level("warcamp"):
@@ -596,6 +656,8 @@ func _update_citadel(dt: float) -> void:
 		return
 	citadel_flash = maxf(0.0, citadel_flash - dt)
 	citadel_hp = minf(CITADEL_HP, citadel_hp + dt * 3.0)
+	if not lord_spawned and citadel_hp < CITADEL_HP * 0.5:
+		_spawn_dread_lord()
 	var d := (hero.position - maze.citadel_pos).length()
 	# The citadel's dark bolts also rain on Camelot's soldiers at its gates.
 	var sold := horde.nearest_friend(maze.citadel_pos, 15.0)
@@ -633,8 +695,38 @@ func _update_citadel(dt: float) -> void:
 						citadel_guards.append(u)
 
 
+func _spawn_dread_lord() -> void:
+	lord_spawned = true
+	var u := horde.spawn("dark_knight", maze.citadel_pos + Vector3(6.5, 0, 6.5), "camp", 1.0, false)
+	if u == null:
+		return
+	u.title = "THE DREAD LORD"
+	u.tint = Color(0.5, 0.32, 0.65)
+	u.scale = 2.4
+	u.r = 1.2
+	u.max_hp = 9000.0 * diff
+	u.hp = u.max_hp
+	u.dmg = 55.0 * diff
+	u.speed = 3.0
+	u.xp = 150
+	u.camp_id = -2
+	u.home = maze.citadel_pos + Vector3(6, 0, 6)
+	u.aggro = true
+	dread_lord = u
+	shake = 0.5
+	fx.ring(u.pos, 0.5, 10.0, Color(0.7, 0.3, 1.0), 1.0, 0.2)
+	fx.burst(u.pos + Vector3(0, 2, 0), Color(0.6, 0.25, 0.9), 40, 8.0, 0.3, 8.0)
+	hud.message("THE DREAD LORD RISES FROM THE CITADEL!", 6.0, Color(0.85, 0.5, 1.0))
+	sfx.play("horn", 6.0, 0.0, 0.0)
+
+
 func damage_citadel(amount: float, show := true) -> void:
 	if citadel_hp <= 0.0 or state != "play" or amount <= 0.0:
+		return
+	if marks.shield_up:
+		if show and time - _shield_msg_t > 0.6:
+			_shield_msg_t = time
+			fx.number(maze.citadel_pos + Vector3(randf_range(-2, 2), 7.0, randf_range(-2, 2)), "SHIELDED", Color(1, 0.4, 0.35))
 		return
 	citadel_hp -= amount
 	citadel_flash = 0.15
@@ -677,8 +769,31 @@ func _citadel_collapse(dt: float) -> void:
 func on_enemy_killed(u: Unit) -> void:
 	kills += 1
 	fx.drop("gem", u.pos, u.xp)
+	if u.structure:
+		marks.on_ward_destroyed(u)
+		for k in 12:
+			fx.drop("coin", u.pos, 20 + wave)
+		items.roll_drop(u.pos, 1.0, 2.0, 3)
+		return
+	if u == dread_lord:
+		hud.message("The Dread Lord is vanquished! Finish the Citadel!", 6.0, Color(1, 0.9, 0.5))
+		for k in 20:
+			fx.drop("coin", u.pos, 30 + wave)
+		items.roll_drop(u.pos, 1.0, 2.0, 3)
+		items.roll_drop(u.pos, 1.0, 2.0, 3)
+		shake = 0.5
+		return
+	# Loot: rare from the rank and file, likely from elites, assured from bosses.
+	if u.mini >= 0:
+		items.roll_drop(u.pos, 1.0, 1.5, 2)
+	elif u.boss:
+		items.roll_drop(u.pos, 0.7, 1.0, 1)
+	elif u.elite:
+		items.roll_drop(u.pos, 0.3, 0.5)
+	else:
+		items.roll_drop(u.pos, 0.02, 0.0)
 	if randf() < u.gold_chance:
-		var base: int = {"goblin": 3, "orc": 6, "skeleton": 4, "ogre": 16, "dark_knight": 40}.get(u.kind, 3)
+		var base: int = {"goblin": 3, "orc": 6, "skeleton": 4, "ogre": 16, "dark_knight": 40, "wolf": 4, "shaman": 7, "necro": 10}.get(u.kind, 3)
 		var coins := 1
 		if u.elite:
 			coins = 3
@@ -751,22 +866,6 @@ func choose(i: int) -> void:
 	state = "play"
 
 
-func try_buy(i: int) -> void:
-	if state != "play" or i < 0 or i >= Castle.UPGRADES.size():
-		return
-	if not at_castle():
-		hud.message("Return to Camelot to build.", 2.0, Color(1, 0.8, 0.5))
-		return
-	var key: String = Castle.UPGRADES[i].key
-	if castle.buy(key):
-		hud.message("%s upgraded to level %d" % [Castle.UPGRADES[i].name, castle.level(key)], 2.0, Color(0.7, 1, 0.7))
-		sfx.play("build", 0.0, 0.1, 0.0)
-	elif castle.level(key) >= Castle.MAX_LEVEL:
-		hud.message("%s is fully upgraded." % Castle.UPGRADES[i].name, 1.5)
-	else:
-		hud.message("Not enough gold in the treasury.", 1.5, Color(1, 0.6, 0.5))
-
-
 func at_castle() -> bool:
 	return hero.alive and (hero.position - maze.castle_pos).length() < Castle.DELIVER_R + 1.0
 
@@ -781,9 +880,15 @@ func restart() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
+			hud.click(mb.position, true)
+			return
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
 				if hud.click(mb.position):
+					return
+				if state == "travel":
+					state = "play"
 					return
 				if state == "title":
 					start()
@@ -806,7 +911,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var k := (event as InputEventKey).physical_keycode
 		if state == "title":
+			if k >= KEY_1 and k <= KEY_3:
+				set_difficulty(k - KEY_1)
 			start()
+			return
+		if state == "travel":
+			if k >= KEY_1 and k <= KEY_9:
+				travel_to(k - KEY_1)
+			elif k == KEY_T or k == KEY_ESCAPE:
+				state = "play"
 			return
 		if state == "levelup":
 			if k >= KEY_1 and k <= KEY_3:
@@ -835,10 +948,42 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_N:
 				sfx.muted = not sfx.muted
 				hud.message("Sound off" if sfx.muted else "Sound on", 1.2)
-			KEY_TAB, KEY_M:
+			KEY_M:
 				hud.big_map = not hud.big_map
-		if state == "play" and k >= KEY_1 and k <= KEY_9:
-			try_buy(k - KEY_1)
+			KEY_T:
+				if state == "play":
+					if marks.waypoint_here():
+						state = "travel"
+					else:
+						hud.message("Stand at Camelot or a Ley Shrine you hold to travel.", 2.0, Color(1, 0.8, 0.5))
+
+
+## Waypoint destinations: Camelot first, then every shrine Camelot holds.
+func travel_targets() -> Array:
+	var out := [["Camelot", maze.castle_pos + Vector3(-1.5, 0, -6.5)]]
+	for s in marks.owned_shrines():
+		out.append([s.name, s.pos + Vector3(2.6, 0, 2.6)])
+	return out
+
+
+func travel_to(i: int) -> void:
+	var t := travel_targets()
+	if i < 0 or i >= t.size():
+		return
+	fx.ring(hero.position, 0.3, 3.0, Color(0.5, 0.8, 1.0), 0.5, 0.2)
+	fx.sparkle(hero.position, Color(0.6, 0.85, 1.0), 16, 0.12)
+	hero.position = maze.collide(t[i][1], 0.42)
+	hero.move_target = Vector3.INF
+	hero.vel = Vector3.ZERO
+	fx.ring(hero.position, 3.0, 0.3, Color(0.5, 0.8, 1.0), 0.5, 0.2)
+	sfx.play("zap", 0.0, 0.0, 0.0)
+	_update_camera(0.0, true)
+	state = "play"
+
+
+func choose_difficulty(i: int) -> void:
+	set_difficulty(i)
+	start()
 
 
 func _mouse_ground() -> Vector3:
@@ -931,8 +1076,41 @@ func _apply_quality() -> void:
 		vp.msaa_3d = Viewport.MSAA_DISABLED
 
 
+func _endgame_shots() -> void:
+	var steps := [[1.0, "e_start"], [3.0, "e_shield_down"], [5.5, "e_lord"], [8.0, "e_won"], [12.0, "e_end"]]
+	if _ui_step >= steps.size():
+		get_tree().quit()
+		return
+	if time < steps[_ui_step][0]:
+		return
+	var name_s: String = steps[_ui_step][1]
+	_ui_step += 1
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("%s/%s.png" % [shot_dir, name_s])
+	print("ENDGAME %s shield=%s wards=%d citadel=%d lord=%s state=%s" % [name_s, marks.shield_up, marks.wards_alive(), citadel_hp, dread_lord != null and dread_lord.alive, state])
+	match name_s:
+		"e_start":
+			start()
+			hero.invuln = 999.0
+			hero.max_hp = 99999.0
+			hero.hp = 99999.0
+			for w in marks.wards:
+				horde.hurt(w, 1e7)
+		"e_shield_down":
+			hero.position = maze.collide(maze.citadel_pos + Vector3(10, 0, 10), 0.42)
+			_update_camera(0.0, true)
+			damage_citadel(CITADEL_HP * 0.55)
+		"e_lord":
+			if dread_lord != null:
+				horde.hurt(dread_lord, 1e7)
+			damage_citadel(1e7)
+
+
 func _ui_shots() -> void:
-	var steps := [[1.5, "title"], [3.0, "levelup"], [4.5, "paused"], [7.5, "over"]]
+	if endgame_test:
+		_endgame_shots()
+		return
+	var steps := [[1.5, "title"], [3.0, "levelup"], [4.5, "inventory"], [7.5, "shrine"], [10.5, "ward"], [13.5, "over"]]
 	if _ui_step >= steps.size():
 		get_tree().quit()
 		return
@@ -948,13 +1126,43 @@ func _ui_shots() -> void:
 			on_spellbook()
 		"levelup":
 			choose(0)
-			state = "paused"
-		"paused":
-			state = "play"
+			for k in 7:
+				hero.take_item(Items.make(6, [0, 1, 2, 3, 1, 2, 3][k]))
+		"inventory":
+			var sh: Landmarks.Shrine = marks.shrines[0]
+			hero.position = maze.collide(sh.pos + Vector3(2.5, 0, 2.5), 0.42)
+			hero.invuln = 99.0
+			items.drop(Items.make(5, 3), hero.position + Vector3(1.5, 0, 0))
+			items.drop(Items.make(5, 1), hero.position + Vector3(-1.5, 0, 0.5))
+			_update_camera(0.0, true)
+		"shrine":
+			hero.position = maze.collide(marks.wards[0].pos + Vector3(5, 0, 5), 0.42)
+			_update_camera(0.0, true)
+		"ward":
 			castle.take_damage(99999)
 
 
+func _sim_report() -> void:
+	if wave != _sim_wave:
+		_sim_wave = wave
+		var sold := 0
+		for u in horde.soldiers:
+			if u.alive: sold += 1
+		var march := 0
+		for u in horde.enemies:
+			if u.alive and u.mode == "march": march += 1
+		var lv := ""
+		for u in Castle.UPGRADES: lv += str(castle.level(u.key))
+		print("SIM t=%d wave=%d castle=%d/%d gold=%d soldiers=%d dread_marching=%d enemies=%d citadel=%d lvls=%s hero_lvl=%d" % [play_time, wave, castle.hp, castle.max_hp, castle.gold, sold, march, horde.enemies.size(), citadel_hp, lv, hero.level])
+	if play_time > 1500.0 or state == "over":
+		print("SIM END state=%s t=%d wave=%d" % [state, play_time, wave])
+		get_tree().quit()
+
+
 func _shots() -> void:
+	if sim:
+		_sim_report()
+		return
 	if ui_test and shot_dir != "":
 		_ui_shots()
 		return

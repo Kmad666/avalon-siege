@@ -330,8 +330,9 @@ func _explode(p: Proj) -> void:
 		game.horde.hurt(u, p.dmg, d.normalized(), 4.0, Color(1, 0.6, 0.25))
 	if (p.pos - game.maze.citadel_pos).length() < 5.0 + r:
 		game.damage_citadel(p.dmg * 0.5)
-	game.shake = maxf(game.shake, 0.15)
-	game.sfx.play("explode", -4.0, 0.1)
+	if (p.pos - game.hero.position).length() < 14.0:
+		game.shake = maxf(game.shake, 0.15)
+		game.sfx.play("explode", -4.0, 0.1)
 
 
 func _update_parts(dt: float) -> void:

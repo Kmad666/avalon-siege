@@ -640,3 +640,197 @@ static func rune_mesh() -> ArrayMesh:
 		g.box(Vector3.ZERO, Vector3(0.12, 0.08, 0.52), Color(0.8, 0.8, 0.8))
 		g.box(Vector3.ZERO, Vector3(0.52, 0.08, 0.12), Color(0.8, 0.8, 0.8))
 		return g.mesh())
+
+
+# ------------------------------------------------------------- new Dread units
+
+static func _wolf(g: Geo, fur: Color) -> void:
+	for lx in [-0.14, 0.14]:
+		for lz in [-0.35, 0.3]:
+			g.box(Vector3(lx, 0.2, lz), Vector3(0.1, 0.4, 0.1), fur.darkened(0.2))
+	g.box(Vector3(0, 0.5, 0), Vector3(0.38, 0.3, 0.9), fur, fur.lightened(0.1))
+	g.box(Vector3(0, 0.62, 0.5), Vector3(0.3, 0.28, 0.3), fur.lightened(0.05))
+	g.box(Vector3(0, 0.56, 0.72), Vector3(0.16, 0.14, 0.2), fur.darkened(0.1))
+	g.box(Vector3(-0.08, 0.66, 0.66), Vector3(0.05, 0.04, 0.02), Color(1, 0.8, 0.1))
+	g.box(Vector3(0.08, 0.66, 0.66), Vector3(0.05, 0.04, 0.02), Color(1, 0.8, 0.1))
+	g.prism(Vector3(-0.1, 0.76, 0.48), 0.05, 0.0, 0.14, 4, fur.darkened(0.2))
+	g.prism(Vector3(0.1, 0.76, 0.48), 0.05, 0.0, 0.14, 4, fur.darkened(0.2))
+	g.push(Transform3D(Basis(Vector3(1, 0, 0), -2.2), Vector3(0, 0.58, -0.45)))
+	g.prism(Vector3.ZERO, 0.08, 0.02, 0.4, 4, fur)
+	g.pop()
+
+
+static func wolf_rider_mesh() -> ArrayMesh:
+	return _cached("wolf_rider", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.55, 8, SHADOW)
+		_wolf(g, Color(0.38, 0.36, 0.36))
+		# goblin rider
+		var skin := Color(0.45, 0.65, 0.25)
+		g.box(Vector3(0, 0.82, -0.05), Vector3(0.26, 0.3, 0.22), Color(0.5, 0.36, 0.22))
+		g.box(Vector3(0, 1.08, 0.0), Vector3(0.26, 0.22, 0.22), skin)
+		g.tri(Vector3(-0.13, 1.12, 0), Vector3(-0.3, 1.2, -0.04), Vector3(-0.13, 1.04, 0), skin.darkened(0.1))
+		g.tri(Vector3(0.13, 1.12, 0), Vector3(0.13, 1.04, 0), Vector3(0.3, 1.2, -0.04), skin.darkened(0.1))
+		g.box(Vector3(0.18, 0.95, 0.35), Vector3(0.04, 0.04, 0.9), Color(0.45, 0.3, 0.2))
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), PI * 0.5), Vector3(0.18, 0.95, 0.8)))
+		g.prism(Vector3.ZERO, 0.06, 0.0, 0.2, 4, Color(0.75, 0.75, 0.78))
+		g.pop()
+		return g.mesh())
+
+
+static func shaman_mesh() -> ArrayMesh:
+	return _cached("shaman", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.5, 8, SHADOW)
+		var skin := Color(0.38, 0.52, 0.3)
+		g.prism(Vector3(0, 0.05, 0), 0.36, 0.26, 0.75, 6, Color(0.42, 0.3, 0.22))
+		g.box(Vector3(0, 0.9, 0), Vector3(0.5, 0.32, 0.36), Color(0.48, 0.38, 0.28))
+		g.box(Vector3(0, 1.2, 0.04), Vector3(0.3, 0.28, 0.3), skin)
+		g.box(Vector3(0, 1.22, 0.2), Vector3(0.22, 0.05, 0.02), Color(0.2, 0.9, 0.3))
+		# feathered headdress
+		for k in 5:
+			var a := -0.6 + k * 0.3
+			g.push(Transform3D(Basis(Vector3(0, 0, 1), a), Vector3(sin(a) * 0.1, 1.32, -0.05)))
+			g.box(Vector3(0, 0.15, 0), Vector3(0.05, 0.3, 0.02), [Color(0.9, 0.2, 0.15), Color(0.95, 0.85, 0.3), Color(0.2, 0.7, 0.3)][k % 3])
+			g.pop()
+		# skull staff
+		g.box(Vector3(0.36, 0.85, 0.15), Vector3(0.05, 1.5, 0.05), Color(0.4, 0.28, 0.18))
+		g.box(Vector3(0.36, 1.65, 0.15), Vector3(0.16, 0.16, 0.16), Color(0.92, 0.9, 0.8))
+		g.shard(Vector3(0.36, 1.74, 0.15), 0.07, 0.2, Color(0.3, 1.0, 0.4))
+		return g.mesh())
+
+
+static func necromancer_mesh() -> ArrayMesh:
+	return _cached("necromancer", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.45, 8, SHADOW)
+		var robe := Color(0.25, 0.15, 0.3)
+		g.prism(Vector3(0, 0.02, 0), 0.38, 0.2, 1.0, 7, robe, Color(0, 0, 0, 0), 0.3)
+		g.box(Vector3(0, 1.12, 0.03), Vector3(0.24, 0.24, 0.24), Color(0.9, 0.88, 0.8))
+		g.box(Vector3(-0.06, 1.14, 0.15), Vector3(0.06, 0.06, 0.02), Color(0.7, 0.2, 1.0))
+		g.box(Vector3(0.06, 1.14, 0.15), Vector3(0.06, 0.06, 0.02), Color(0.7, 0.2, 1.0))
+		g.prism(Vector3(0, 1.0, -0.02), 0.26, 0.0, 0.62, 6, robe.lightened(0.06))  # hood
+		g.box(Vector3(-0.3, 0.75, 0.05), Vector3(0.14, 0.14, 0.3), robe.darkened(0.1))
+		g.box(Vector3(0.3, 0.75, 0.05), Vector3(0.14, 0.14, 0.3), robe.darkened(0.1))
+		g.box(Vector3(0.36, 0.8, 0.2), Vector3(0.05, 1.5, 0.05), Color(0.2, 0.18, 0.2))
+		g.shard(Vector3(0.36, 1.55, 0.2), 0.1, 0.32, Color(0.7, 0.25, 1.0))
+		return g.mesh())
+
+
+# ------------------------------------------------------------- new Camelot units
+
+static func _horse(g: Geo, coat: Color) -> void:
+	for lx in [-0.16, 0.16]:
+		for lz in [-0.4, 0.38]:
+			g.box(Vector3(lx, 0.27, lz), Vector3(0.11, 0.54, 0.11), coat.darkened(0.15))
+	g.box(Vector3(0, 0.68, 0), Vector3(0.42, 0.36, 1.05), coat, coat.lightened(0.08))
+	g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.6), Vector3(0, 0.85, 0.5)))
+	g.box(Vector3(0, 0.15, 0), Vector3(0.22, 0.45, 0.26), coat)
+	g.pop()
+	g.box(Vector3(0, 1.05, 0.72), Vector3(0.2, 0.2, 0.36), coat.lightened(0.05))
+	g.box(Vector3(0, 1.1, 0.52), Vector3(0.06, 0.24, 0.3), Color(0.2, 0.15, 0.12))  # mane
+	g.box(Vector3(0, 0.6, -0.6), Vector3(0.08, 0.4, 0.1), Color(0.2, 0.15, 0.12))    # tail
+	g.box(Vector3(0, 0.88, 0), Vector3(0.46, 0.08, 0.5), Color(0.2, 0.36, 0.8))      # caparison
+
+
+static func cavalry_mesh() -> ArrayMesh:
+	return _cached("cavalry", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.6, 8, SHADOW)
+		_horse(g, Color(0.85, 0.82, 0.78))
+		var steel := Color(0.72, 0.74, 0.8)
+		g.box(Vector3(0, 1.12, -0.05), Vector3(0.36, 0.38, 0.26), steel)
+		g.prism(Vector3(0, 1.3, -0.05), 0.15, 0.13, 0.3, 6, steel)
+		g.box(Vector3(0, 1.43, 0.06), Vector3(0.16, 0.04, 0.05), Color(0.1, 0.1, 0.12))
+		g.box(Vector3(0.24, 1.12, 0.55), Vector3(0.06, 0.06, 1.5), Color(0.9, 0.85, 0.7))
+		g.box(Vector3(-0.24, 1.05, 0.05), Vector3(0.06, 0.4, 0.3), Color(0.2, 0.36, 0.8), Color(0.95, 0.8, 0.3))
+		return g.mesh())
+
+
+static func _robed(g: Geo, robe: Color, hat: Color, gem: Color, beard: bool) -> void:
+	g.prism(Vector3(0, 0.05, 0), 0.36, 0.22, 0.75, 8, robe, Color(0, 0, 0, 0), 0.2)
+	g.prism(Vector3(0, 0.8, 0), 0.22, 0.18, 0.3, 8, robe.lightened(0.05), Color(0, 0, 0, 0), 0.2)
+	g.box(Vector3(0, 0.62, 0), Vector3(0.46, 0.06, 0.4), Color(0.85, 0.7, 0.3))
+	g.box(Vector3(0, 1.2, 0.02), Vector3(0.24, 0.24, 0.24), Color(0.92, 0.75, 0.6))
+	if beard:
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), PI - 0.25), Vector3(0, 1.15, 0.15)))
+		g.prism(Vector3.ZERO, 0.15, 0.0, 0.4, 6, Color(0.6, 0.45, 0.3))
+		g.pop()
+	g.prism(Vector3(0, 1.32, 0.02), 0.34, 0.32, 0.05, 8, hat)
+	g.prism(Vector3(0, 1.37, 0.02), 0.2, 0.0, 0.55, 8, hat.lightened(0.05))
+	g.box(Vector3(0.32, 0.78, 0.18), Vector3(0.05, 1.45, 0.05), Color(0.42, 0.28, 0.16))
+	g.shard(Vector3(0.32, 1.48, 0.18), 0.08, 0.24, gem)
+
+
+static func battlemage_mesh() -> ArrayMesh:
+	return _cached("battlemage", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.42, 8, SHADOW)
+		_robed(g, Color(0.2, 0.32, 0.75), Color(0.18, 0.26, 0.6), Color(1.0, 0.55, 0.15), true)
+		return g.mesh())
+
+
+static func cleric_mesh() -> ArrayMesh:
+	return _cached("cleric", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.42, 8, SHADOW)
+		var white := Color(0.92, 0.9, 0.85)
+		g.prism(Vector3(0, 0.05, 0), 0.36, 0.22, 0.75, 8, white, Color(0, 0, 0, 0), 0.2)
+		g.prism(Vector3(0, 0.8, 0), 0.22, 0.18, 0.3, 8, white.lightened(0.03), Color(0, 0, 0, 0), 0.2)
+		g.box(Vector3(0, 0.5, 0.2), Vector3(0.08, 0.5, 0.02), Color(0.95, 0.75, 0.25))
+		g.box(Vector3(0, 0.62, 0.2), Vector3(0.26, 0.08, 0.02), Color(0.95, 0.75, 0.25))
+		g.box(Vector3(0, 1.2, 0.02), Vector3(0.24, 0.24, 0.24), Color(0.92, 0.75, 0.6))
+		g.prism(Vector3(0, 1.12, -0.02), 0.22, 0.12, 0.38, 6, white.darkened(0.08))     # hood
+		g.box(Vector3(0.32, 0.8, 0.18), Vector3(0.05, 1.3, 0.05), Color(0.85, 0.7, 0.3))
+		g.prism(Vector3(0.32, 1.42, 0.18), 0.12, 0.12, 0.05, 8, Color(1.0, 0.85, 0.35))   # sun disc
+		return g.mesh())
+
+
+# ------------------------------------------------------------- landmarks & loot
+
+static func ward_mesh() -> ArrayMesh:
+	return _cached("ward", func():
+		var g := Geo.new()
+		var obs := Color(0.17, 0.13, 0.17)
+		g.prism(Vector3.ZERO, 2.2, 1.9, 0.5, 6, Color(0.24, 0.2, 0.22), obs, 0.3)
+		g.prism(Vector3(0, 0.5, 0), 0.9, 0.35, 6.0, 4, obs, obs, PI * 0.25)
+		for k in 4:
+			var a := PI * 0.25 + k * PI * 0.5
+			var d := Vector3(cos(a), 0, sin(a))
+			g.prism(d * 1.6 + Vector3(0, 0.5, 0), 0.3, 0.0, 1.6, 4, obs.lightened(0.05))
+			g.box(d * 0.62 + Vector3(0, 2.0 + k * 0.6, 0), Vector3(0.16, 0.5, 0.16), Color(1.0, 0.25, 0.1))
+		return g.mesh())
+
+
+static func shrine_base_mesh() -> ArrayMesh:
+	return _cached("shrine_base", func():
+		var g := Geo.new()
+		var st := Color(0.66, 0.64, 0.6)
+		g.prism(Vector3.ZERO, 2.3, 2.2, 0.22, 10, st.darkened(0.15), st)
+		g.ring(Vector3(0, 0.23, 0), 1.6, 0.18, 20, Color(0.45, 0.43, 0.42))
+		for k in 5:
+			var a := k * TAU / 5.0
+			g.prism(Vector3(cos(a), 0, sin(a)) * 1.9 + Vector3(0, 0.2, 0), 0.22, 0.17, 1.3, 4, st, st.lightened(0.08), a)
+		g.prism(Vector3(0, 0.2, 0), 0.35, 0.28, 1.1, 6, st.lightened(0.05))
+		return g.mesh())
+
+
+static func shrine_crystal_mesh() -> ArrayMesh:
+	return _cached("shrine_crystal", func():
+		var g := Geo.new()
+		g.shard(Vector3(0, 0, 0), 0.32, 1.1, Color.WHITE)
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), PI), Vector3(0, 0.05, 0)))
+		g.shard(Vector3.ZERO, 0.32, 0.45, Color(0.85, 0.85, 0.85))
+		g.pop()
+		return g.mesh())
+
+
+static func loot_mesh() -> ArrayMesh:
+	return _cached("loot", func():
+		var g := Geo.new()
+		g.box(Vector3(0, 0.16, 0), Vector3(0.5, 0.32, 0.36), Color(0.5, 0.32, 0.18), Color(0.55, 0.36, 0.2))
+		g.box(Vector3(0, 0.36, 0), Vector3(0.52, 0.1, 0.38), Color(0.6, 0.4, 0.22))
+		g.box(Vector3(0, 0.2, 0.19), Vector3(0.1, 0.12, 0.03), Color(0.95, 0.8, 0.3))
+		g.box(Vector3(-0.2, 0.2, 0), Vector3(0.05, 0.34, 0.38), Color(0.75, 0.62, 0.3))
+		g.box(Vector3(0.2, 0.2, 0), Vector3(0.05, 0.34, 0.38), Color(0.75, 0.62, 0.3))
+		return g.mesh())

@@ -66,6 +66,8 @@ var relic_bounce := 0
 var relic_army := 1.0
 var relic_gold := 1.0
 var relics: Array[String] = []
+# Equipment.
+var gear := {}            # slot -> Items.Item
 
 var body: MeshInstance3D
 var staff_pivot: Node3D
@@ -103,21 +105,28 @@ func setup(g: Game) -> void:
 
 
 func _xp_for(l: int) -> float:
-	return 8.0 + l * 6.0 + l * l * 1.1
+	return 12.0 + l * 9.0 + l * l * 2.6
+
+
+func gear_stat(stat: String) -> float:
+	var t := 0.0
+	for s in gear:
+		t += gear[s].stats.get(stat, 0.0)
+	return t
 
 
 func recompute() -> void:
 	var c := game.castle
 	var ratio := hp / max_hp if max_hp > 0.0 else 1.0
-	max_hp = 110.0 + 25.0 * passives.get("vigor", 0) + 25.0 * c.level("armory") + relic_hp
-	armor = 1.5 * c.level("armory")
-	speed = 6.2 * (1.0 + 0.07 * passives.get("swift", 0)) * (1.0 + 0.1 * c.level("shrine"))
-	regen = 0.3 + 0.6 * passives.get("vigor", 0) + 1.0 * c.level("shrine")
-	pickup_r = 2.8 * (1.0 + 0.4 * passives.get("magnet", 0))
+	max_hp = 110.0 + 25.0 * passives.get("vigor", 0) + 25.0 * c.level("armory") + relic_hp + gear_stat("hp")
+	armor = 1.5 * c.level("armory") + gear_stat("armor")
+	speed = 6.2 * (1.0 + 0.07 * passives.get("swift", 0)) * (1.0 + 0.1 * c.level("shrine")) * (1.0 + gear_stat("speed") / 100.0)
+	regen = 0.3 + 0.6 * passives.get("vigor", 0) + 1.0 * c.level("shrine") + gear_stat("regen")
+	pickup_r = 2.8 * (1.0 + 0.4 * passives.get("magnet", 0)) * (1.0 + gear_stat("pickup") / 100.0)
 	carry_cap = 25.0 + 8.0 * passives.get("prospect", 0)
 	gather_rate = 6.0 * (1.0 + 0.35 * passives.get("prospect", 0))
-	dmg_mult = (1.0 + 0.12 * passives.get("might", 0)) * (1.0 + 0.15 * c.level("forge")) * relic_dmg
-	cd_mult = pow(0.92, passives.get("haste", 0)) * pow(0.93, c.level("mage")) * relic_cd
+	dmg_mult = (1.0 + 0.12 * passives.get("might", 0)) * (1.0 + 0.15 * c.level("forge")) * relic_dmg * (1.0 + gear_stat("dmg") / 100.0)
+	cd_mult = pow(0.92, passives.get("haste", 0)) * pow(0.93, c.level("mage")) * relic_cd * maxf(0.5, 1.0 - gear_stat("cd") / 100.0)
 	potion_max = 2 + c.level("shrine")
 	hp = max_hp * ratio
 
@@ -184,7 +193,7 @@ func _move(dt: float) -> void:
 					dir = f
 	var want := dir * speed
 	vel = vel.lerp(want, minf(1.0, dt * 14.0))
-	var np := game.maze.collide(position + vel * dt, 0.42)
+	var np := game.marks.collide_hero(game.maze.collide(position + vel * dt, 0.42))
 	var moved := (np - position).length()
 	position = np
 	anim += moved * 2.2
@@ -257,7 +266,7 @@ func _spells(dt: float) -> void:
 				_cast_at(first.pos)
 				var cur: Unit = first
 				var hit := {}
-				for k in 2 + ll + relic_bounce:
+				for k in 2 + ll + relic_bounce + int(gear_stat("bounce")):
 					if cur == null:
 						break
 					hit[cur] = true
@@ -445,7 +454,7 @@ func collect(kind: String, val: int) -> void:
 			game.sfx.play("gem", -6.0, 0.04)
 		"coin":
 			# Coins go straight to Camelot's treasury.
-			var v := roundf(val * relic_gold)
+			var v := roundf(val * relic_gold * (1.0 + gear_stat("gold") / 100.0))
 			game.castle.add_gold(v, position)
 			game.sfx.play("coin", -4.0, 0.06)
 		"potion":
@@ -453,7 +462,7 @@ func collect(kind: String, val: int) -> void:
 
 
 func add_xp(v: float) -> void:
-	xp += v
+	xp += v * (1.0 + gear_stat("xp") / 100.0)
 	while xp >= xp_next:
 		xp -= xp_next
 		level += 1
@@ -489,6 +498,28 @@ func apply_choice(c: Dictionary) -> void:
 			recompute()
 		"heal":
 			hp = max_hp
+
+
+## Pick up an item: wear it if it beats what's in that slot (the old piece
+## is melted down for gold), otherwise melt the new one down. No inventory.
+func take_item(it) -> bool:
+	var cur = gear.get(it.slot)
+	if cur == null or Items.score(it) > Items.score(cur):
+		gear[it.slot] = it
+		recompute()
+		var extra := ""
+		if cur != null:
+			game.castle.add_gold(cur.value, position, false)
+			extra = "  (+%d gold)" % cur.value
+		game.fx.number(position + Vector3(0, 2.6, 0), "Equipped " + it.name + extra, Items.RARITY_COLORS[it.rarity])
+		game.hud.loot_msg(it, true)
+		game.sfx.play("build", -4.0, 0.05, 0.0)
+	else:
+		game.castle.add_gold(it.value, position, false)
+		game.fx.number(position + Vector3(0, 2.6, 0), "+%d gold (%s)" % [it.value, it.name], Color(1, 0.85, 0.3))
+		game.hud.loot_msg(it, false)
+		game.sfx.play("coin", 0.0, 0.05, 0.0)
+	return true
 
 
 ## Permanent reward from a slain mini-boss.

@@ -83,7 +83,7 @@ func _place() -> void:
 	# Spellbooks: tucked into dead ends across the maze, more of them further out.
 	var placed := 0
 	tries = 0
-	while placed < 7 and tries < 2000:
+	while placed < 5 and tries < 2000:
 		tries += 1
 		var t := Vector2i(rng.randi_range(2, Maze.G - 3), rng.randi_range(2, Maze.G - 3))
 		if not maze.is_open_t(t) or used.has(t):

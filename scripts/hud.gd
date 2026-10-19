@@ -21,7 +21,19 @@ var map_img: Image
 var big_map := false
 var _upgrade_rects: Array[Rect2] = []
 var _choice_rects: Array[Rect2] = []
+var _diff_rects: Array[Rect2] = []
+var _bag_rects: Array[Rect2] = []
+var _gear_rects := {}             # slot -> Rect2
+var _travel_rects: Array[Rect2] = []
 var _map_t := 0.0
+var loot_log: Array = []          # [text, color, t]
+
+
+func loot_msg(it, equipped: bool) -> void:
+	var txt: String = ("Equipped  " if equipped else "Melted down  ") + it.name
+	loot_log.append([txt, Items.RARITY_COLORS[it.rarity] if equipped else DIM, 6.0])
+	if loot_log.size() > 4:
+		loot_log.pop_front()
 
 
 func setup(g: Game) -> void:
@@ -40,22 +52,34 @@ func message(text: String, dur := 3.0, col := TEXT) -> void:
 
 
 ## Returns true if the click hit the interface.
-func click(p: Vector2) -> bool:
+func click(p: Vector2, right := false) -> bool:
+	if game.state == "title":
+		for i in _diff_rects.size():
+			if _diff_rects[i].has_point(p):
+				game.choose_difficulty(i)
+				return true
+		return false
+	if game.state == "travel":
+		for i in _travel_rects.size():
+			if _travel_rects[i].has_point(p):
+				game.travel_to(i)
+		return true
+	if right:
+		return false
 	if game.state == "levelup":
 		for i in _choice_rects.size():
 			if _choice_rects[i].has_point(p):
 				game.choose(i)
 		return true
-	if game.state == "play":
-		for i in _upgrade_rects.size():
-			if _upgrade_rects[i].has_point(p):
-				game.try_buy(i)
-				return true
 	return false
 
 
 func _process(dt: float) -> void:
 	msg_t = maxf(0.0, msg_t - dt)
+	for l in loot_log:
+		l[2] -= dt
+	while not loot_log.is_empty() and loot_log[0][2] <= 0.0:
+		loot_log.pop_front()
 	_map_t -= dt
 	if minimap_dirty and _map_t <= 0.0:
 		_map_t = 0.4
@@ -106,6 +130,10 @@ func _draw2() -> void:
 	var vs := get_viewport_rect().size
 	_upgrade_rects.clear()
 	_choice_rects.clear()
+	_diff_rects.clear()
+	_bag_rects.clear()
+	_gear_rects.clear()
+	_travel_rects.clear()
 	_draw_world_text()
 	if game.state == "title":
 		_draw_title(vs)
@@ -122,7 +150,14 @@ func _draw2() -> void:
 		_str(Vector2(0, vs.y * 0.27), msg, 22, c, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	if not game.hero.alive and game.state == "play":
 		_str(Vector2(0, vs.y * 0.45), "Respawning in %d..." % int(ceil(game.hero.respawn_t)), 26, Color(1, 0.6, 0.5), HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+	if game.state == "play" and game.hero.alive:
+		var hints := []
+		if game.marks.waypoint_here():
+			hints.append("T: waypoint travel")
+		if not hints.is_empty():
+			_str(Vector2(0, vs.y - 92), "   ·   ".join(hints), 14, Color(0.7, 0.85, 1.0), HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	match game.state:
+		"travel": _draw_travel(vs)
 		"levelup": _draw_levelup(vs)
 		"paused": _draw_overlay(vs, "PAUSED", "Press P to resume")
 		"over": _draw_end(vs, false)
@@ -142,9 +177,9 @@ func _draw_world_text() -> void:
 		_str(sp - Vector2(40, 0), n[1], size, c, HORIZONTAL_ALIGNMENT_CENTER, 80)
 	# HP bars over elites, bosses, and wounded knights.
 	for u in game.horde.enemies:
-		if u.mini >= 0:
-			if (u.pos - game.hero.position).length() < 18.0:
-				var sm := cam.unproject_position(u.pos + Vector3(0, 2.4 * u.scale, 0))
+		if u.mini >= 0 or u.title != "":
+			if (u.pos - game.hero.position).length() < 18.0 and u.hp < u.max_hp or (u.pos - game.hero.position).length() < 12.0:
+				var sm := cam.unproject_position(u.pos + Vector3(0, 2.4 * u.scale + (3.5 if u.structure else 0.0), 0))
 				_str(sm - Vector2(100, 8), u.title, 15, Color(1, 0.8, 0.4), HORIZONTAL_ALIGNMENT_CENTER, 200)
 				_bar(Rect2(sm - Vector2(45, 0), Vector2(90, 6)), u.hp / u.max_hp, Color(0.95, 0.55, 0.15))
 			continue
@@ -155,6 +190,23 @@ func _draw_world_text() -> void:
 		if a.alive and a.hp < a.max_hp * 0.98:
 			var sp3 := cam.unproject_position(a.pos + Vector3(0, 1.6, 0))
 			_bar(Rect2(sp3 - Vector2(15, 0), Vector2(30, 3)), a.hp / a.max_hp, Color(0.35, 0.6, 1.0))
+	# Shrines: name, capture progress, health.
+	for s in game.marks.shrines:
+		var d := (s.pos - game.hero.position).length()
+		if d < 14.0:
+			var sp4 := cam.unproject_position(s.pos + Vector3(0, 3.4, 0))
+			_str(sp4 - Vector2(110, 10), s.name, 14, Color(0.6, 0.8, 1.0) if s.owner == 0 else Color(1, 0.55, 0.45), HORIZONTAL_ALIGNMENT_CENTER, 220)
+			if s.owner == 1 and s.cap > 0.0:
+				_bar(Rect2(sp4 - Vector2(40, 0), Vector2(80, 6)), s.cap / Landmarks.CAPTURE_TIME, Color(0.4, 0.7, 1.0))
+			elif s.owner == 1 and d < 5.0:
+				_str(sp4 + Vector2(-110, 14), "Clear nearby foes and stand here to capture", 12, DIM, HORIZONTAL_ALIGNMENT_CENTER, 220)
+			elif s.owner == 0 and s.hp < s.max_hp:
+				_bar(Rect2(sp4 - Vector2(40, 0), Vector2(80, 5)), s.hp / s.max_hp, Color(0.4, 0.7, 1.0))
+	# Loot labels.
+	for dr in game.items.drops:
+		if (dr.pos - game.hero.position).length() < 12.0:
+			var lp := cam.unproject_position(dr.pos + Vector3(0, 0.9, 0))
+			_str(lp - Vector2(100, 0), dr.item.name, 13, Items.RARITY_COLORS[dr.item.rarity], HORIZONTAL_ALIGNMENT_CENTER, 200)
 	var h := game.hero
 	if h.alive and game.state != "title":
 		var hp_p := cam.unproject_position(h.position + Vector3(0, 2.0, 0))
@@ -198,6 +250,25 @@ func _draw_top_left() -> void:
 	for r in h.relics:
 		_str(Vector2(16, y), "Relic: " + r, 13, GOLD)
 		y += 16
+	# Worn gear (auto-equipped).
+	y += 6
+	var gx := 16.0
+	for slot in Items.SLOTS:
+		var gr := Rect2(gx, y, 30, 30)
+		if h.gear.has(slot):
+			_item_icon(gr, h.gear[slot])
+			if gr.has_point(get_viewport().get_mouse_position()):
+				_tooltip(get_viewport().get_mouse_position(), h.gear[slot], null)
+		else:
+			draw_rect(gr, Color(0.08, 0.08, 0.08, 0.6))
+			draw_rect(gr, Color(0.3, 0.28, 0.25), false, 1.0)
+		gx += 34
+	y += 46
+	for l in loot_log:
+		var lc: Color = l[1]
+		lc.a = clampf(l[2], 0.0, 1.0)
+		_str(Vector2(16, y), l[0], 12, lc)
+		y += 15
 
 
 func _res(p: Vector2, v: float, c: Color) -> void:
@@ -214,7 +285,10 @@ func _draw_top_center(vs: Vector2) -> void:
 	_str(Vector2(x + 12, 30), "Camelot", 14, Color(0.6, 0.75, 1.0))
 	_bar(Rect2(x + 90, 19, w - 102, 12), c.hp / c.max_hp, Color(1, 0.4, 0.3) if flash else Color(0.3, 0.55, 1.0))
 	_str(Vector2(x + 12, 52), "Citadel", 14, Color(1.0, 0.5, 0.45))
-	_bar(Rect2(x + 90, 41, w - 102, 12), game.citadel_hp / Game.CITADEL_HP, Color(1, 1, 1) if game.citadel_flash > 0 else Color(0.75, 0.12, 0.12))
+	var shielded := game.marks.shield_up
+	_bar(Rect2(x + 90, 41, w - 102, 12), game.citadel_hp / Game.CITADEL_HP, Color(0.55, 0.3, 0.7) if shielded else (Color(1, 1, 1) if game.citadel_flash > 0 else Color(0.75, 0.12, 0.12)))
+	if shielded:
+		_str(Vector2(x + 90, 52), "SHIELDED — %d Dread Wards remain" % game.marks.wards_alive(), 11, TEXT, HORIZONTAL_ALIGNMENT_CENTER, w - 102)
 	var wt := "Wave %d in %d s" % [game.wave + 1, int(ceil(game.wave_t))]
 	if not game.spawn_queue.is_empty():
 		wt = "Wave %d is marching!" % game.wave
@@ -235,54 +309,43 @@ func _draw_top_right(vs: Vector2) -> void:
 	for s in game.horde.soldiers:
 		if s.alive: army += 1
 	_str(Vector2(x + 140, 57), "%d army" % army, 13, Color(0.6, 0.75, 1.0))
+	var inc := game.marks.income_rate()
+	if inc > 0.0:
+		_str(Vector2(x + 140, 76), "+%.1f/s" % inc, 12, GOLD)
 	var mins := int(game.play_time) / 60
 	var secs := int(game.play_time) % 60
 	_str(Vector2(x + 12, 76), "%d:%02d   %d slain" % [mins, secs, game.kills], 13, DIM)
 	_str(Vector2(x + 140, 30), "%d fps %s" % [int(game.fps_now), ["L", "M", "H"][game.quality]], 12, DIM, HORIZONTAL_ALIGNMENT_RIGHT, 80)
 
 
+## Read-only: Camelot's steward builds on its own. Shows levels and what's next.
 func _draw_upgrades(vs: Vector2) -> void:
 	var c := game.castle
-	var home := game.at_castle()
 	var n := Castle.UPGRADES.size()
-	var bh := 62.0
-	var gap := 5.0
-	# Fit between the left edge and the minimap.
 	var avail := vs.x - 170.0 * 1.5 - 40.0
-	var bw := minf(130.0, (avail - (n - 1) * gap) / n)
-	var scale := bw / 128.0
-	var total := n * bw + (n - 1) * gap
+	var bw := minf(108.0, (avail - (n - 1) * 4.0) / n)
+	var total := n * bw + (n - 1) * 4.0
 	var x0 := maxf(10.0, (avail - total) * 0.5 + 10.0)
-	var y0 := vs.y - bh - 12.0
-	if not home:
-		_str(Vector2(x0, y0 + bh - 4), "Return to Camelot to bank ore and build upgrades (1-9)", 15, DIM)
-		return
-	_str(Vector2(x0, y0 - 8), "CAMELOT — click or press 1-9 to build", 14, EDGE)
+	var y0 := vs.y - 34.0
+	var nk := c.next_key()
+	if nk != "":
+		var cost := c.cost_of(nk)
+		_str(Vector2(x0, y0 - 8), "Camelot's steward is saving for  %s  (%d / %d gold)" % [c.upgrade_name(nk), int(c.gold), cost], 14, EDGE)
+		_bar(Rect2(x0 + total - 120, y0 - 18, 120, 8), c.gold / maxf(1.0, cost), GOLD)
+	else:
+		_str(Vector2(x0, y0 - 8), "Camelot is fully built!", 14, GOLD)
 	var mp := get_viewport().get_mouse_position()
 	for i in n:
 		var u: Dictionary = Castle.UPGRADES[i]
-		var r := Rect2(x0 + i * (bw + gap), y0, bw, bh)
-		_upgrade_rects.append(r)
+		var r := Rect2(x0 + i * (bw + 4.0), y0, bw, 24)
 		var lv := c.level(u.key)
-		var maxed := lv >= Castle.MAX_LEVEL
-		var ok := c.can_afford(u.key)
-		var bg := Color(0.12, 0.16, 0.1, 0.9) if ok else Color(0.09, 0.08, 0.08, 0.85)
-		if r.has_point(mp):
-			bg = bg.lightened(0.12)
-		draw_rect(r, bg)
-		draw_rect(r, EDGE if ok else Color(0.4, 0.36, 0.3), false, 1.5)
-		_str(r.position + Vector2(6, 16), "%d %s" % [i + 1, u.name], 13, TEXT if ok else DIM)
+		draw_rect(r, Color(0.08, 0.08, 0.07, 0.8) if u.key != nk else Color(0.16, 0.14, 0.08, 0.9))
+		draw_rect(r, EDGE if u.key == nk else Color(0.35, 0.32, 0.28), false, 1.0)
+		_str(r.position + Vector2(5, 13), u.name, 11, TEXT if lv > 0 else DIM)
 		for k in Castle.MAX_LEVEL:
-			draw_rect(Rect2(r.position + Vector2(6 + k * 9, 22), Vector2(7, 4)), GOLD if k < lv else Color(0.3, 0.28, 0.25))
-		if maxed:
-			_str(r.position + Vector2(6, 44), "MAX", 13, GOLD)
-		else:
-			var cost := c.cost_of(u.key)
-			draw_circle(r.position + Vector2(10, 39), 4, GOLD)
-			_str(r.position + Vector2(18, 44), str(cost), 13, GOLD if c.gold >= cost else Color(0.9, 0.35, 0.3))
+			draw_rect(Rect2(r.position + Vector2(5 + k * 8, 17), Vector2(6, 3)), GOLD if k < lv else Color(0.3, 0.28, 0.25))
 		if r.has_point(mp):
-			_str(Vector2(x0, y0 - 26), u.desc, 14, TEXT)
-		_str(r.position + Vector2(6, 58), "", 11, DIM)
+			_str(Vector2(x0, y0 - 28), "%s — %s" % [u.name, u.desc], 13, TEXT)
 
 
 func _draw_minimap(vs: Vector2) -> void:
@@ -325,6 +388,16 @@ func _draw_minimap(vs: Vector2) -> void:
 	for a in game.horde.allies:
 		if a.alive:
 			draw_rect(Rect2(Vector2(a.pos.x, a.pos.z) / Maze.T - half - Vector2(0.5, 0.5), Vector2(1, 1)), Color(0.5, 0.75, 1.0))
+	# Shrines and wards are landmarks: always shown.
+	for sh in game.marks.shrines:
+		var spm := Vector2(sh.pos.x, sh.pos.z) / Maze.T - half
+		draw_circle(spm, 1.9, Color(0, 0, 0, 0.8))
+		draw_circle(spm, 1.4, Color(0.45, 0.7, 1.0) if sh.owner == 0 else Color(0.95, 0.4, 0.3))
+	for wd in game.marks.wards:
+		if wd.alive:
+			var wp := Vector2(wd.pos.x, wd.pos.z) / Maze.T - half
+			draw_rect(Rect2(wp - Vector2(1.8, 1.8), Vector2(3.6, 3.6)), Color(0, 0, 0, 0.8))
+			draw_rect(Rect2(wp - Vector2(1.2, 1.2), Vector2(2.4, 2.4)), Color(0.75, 0.25, 0.9))
 	# Fortress markers always shown.
 	var cp := Vector2(m.castle_pos.x, m.castle_pos.z) / Maze.T - half
 	draw_rect(Rect2(cp - Vector2(1.5, 1.5), Vector2(3, 3)), Color(0.45, 0.65, 1.0))
@@ -389,21 +462,100 @@ func _draw_end(vs: Vector2, won: bool) -> void:
 
 
 func _draw_title(vs: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.62))
-	var y := vs.y * 0.2
-	_str(Vector2(0, y), "AVALON SIEGE", 64, GOLD, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
-	_str(Vector2(0, y + 40), "Gather. Build. Break the Dread Citadel.", 20, TEXT, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.66))
+	var y := vs.y * 0.13
+	_str(Vector2(0, y), "AVALON SIEGE", 60, GOLD, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+	_str(Vector2(0, y + 36), "Gather. Build. Break the Dread Citadel.", 19, TEXT, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	var lines := [
-		"You are Merlin. Move: click & hold (or WASD / arrows). Your spells cast on their own.",
-		"Mine gold veins and carry the ore home; coins from slain foes go straight to the treasury.",
-		"At Camelot spend gold on upgrades (1-9): hire Miners, raise towers, train your army.",
-		"Each wave, Camelot's host marches out to meet the Dread Army in the maze. Tip the battle!",
-		"Seek glowing spellbooks and slay the six mini-bosses for relics of power.",
-		"Destroy the Dread Citadel in the far corner to win. Lose Camelot and all is lost.",
-		"",
-		"SPACE potion   ·   M map   ·   wheel zoom   ·   P pause   ·   F fullscreen   ·   G graphics   ·   N sound",
+		"You are Merlin. Click & hold (or WASD) to move; your spells cast on their own.",
+		"Mine gold and bank it at Camelot; its steward builds miners, towers and your army on its own.",
+		"Each wave, Camelot's host marches out to meet the Dread Army. The Dread grows stronger every era.",
+		"Capture Ley Shrines for gold and waypoints (T). Hunt spellbooks, mini-bosses and loot.",
+		"Three Dread Wards shield the Citadel. Destroy them, face the Dread Lord, and end the siege.",
 	]
 	for i in lines.size():
-		_str(Vector2(0, y + 100 + i * 28), lines[i], 17, Color(0.88, 0.86, 0.8) if i < 6 else DIM, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+		_str(Vector2(0, y + 80 + i * 25), lines[i], 16, Color(0.88, 0.86, 0.8), HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+	# Difficulty cards.
+	var cw := 220.0
+	var ch := 92.0
+	var gap := 20.0
+	var x0 := (vs.x - (3 * cw + 2 * gap)) * 0.5
+	var cy := y + 80 + lines.size() * 25 + 22
+	_str(Vector2(0, cy - 8), "Choose your difficulty", 18, EDGE, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+	var mp := get_viewport().get_mouse_position()
+	for i in 3:
+		var d: Dictionary = Game.DIFFS[i]
+		var r := Rect2(x0 + i * (cw + gap), cy + 6, cw, ch)
+		_diff_rects.append(r)
+		var sel := i == Game.diff_idx
+		var hover := r.has_point(mp)
+		draw_rect(r, Color(0.14, 0.13, 0.1, 0.95) if not hover else Color(0.2, 0.18, 0.13, 0.98))
+		draw_rect(r, GOLD if sel or hover else Color(0.45, 0.4, 0.32), false, 2.0)
+		_str(r.position + Vector2(0, 32), "%d  %s" % [i + 1, d.name], 22, [Color(0.6, 0.9, 0.6), TEXT, Color(1, 0.5, 0.4)][i], HORIZONTAL_ALIGNMENT_CENTER, cw)
+		_str(r.position + Vector2(0, 62), d.desc, 13, DIM, HORIZONTAL_ALIGNMENT_CENTER, cw)
+	_str(Vector2(0, cy + ch + 46), "SPACE potion · T travel · M map · wheel zoom · P pause · F fullscreen · G graphics · N sound", 14, DIM, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	if int(game.time * 2.0) % 2 == 0:
-		_str(Vector2(0, vs.y * 0.86), "Click or press any key to begin", 24, TEXT, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+		_str(Vector2(0, cy + ch + 76), "Press 1, 2 or 3 — or click a difficulty — to begin", 20, TEXT, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+
+
+func _item_icon(r: Rect2, it) -> void:
+	var c: Color = Items.RARITY_COLORS[it.rarity]
+	draw_rect(r, Color(c.r * 0.18, c.g * 0.18, c.b * 0.18, 0.95))
+	draw_rect(r, c, false, 2.0)
+	var m := r.get_center()
+	var s := r.size.x * 0.28
+	match it.slot:
+		"staff":
+			draw_line(m + Vector2(-s, s), m + Vector2(s * 0.7, -s * 0.7), Color(0.6, 0.42, 0.25), 4.0)
+			draw_circle(m + Vector2(s * 0.8, -s * 0.8), s * 0.35, c)
+		"hat":
+			draw_colored_polygon(PackedVector2Array([m + Vector2(-s * 1.2, s * 0.7), m + Vector2(s * 1.2, s * 0.7), m + Vector2(0, -s * 1.2)]), Color(0.5, 0.34, 0.2))
+			draw_line(m + Vector2(-s * 1.2, s * 0.7), m + Vector2(s * 1.2, s * 0.7), c, 3.0)
+		"robe":
+			draw_colored_polygon(PackedVector2Array([m + Vector2(-s * 0.5, -s), m + Vector2(s * 0.5, -s), m + Vector2(s, s), m + Vector2(-s, s)]), Color(0.5, 0.34, 0.2))
+			draw_line(m + Vector2(-s * 0.7, 0), m + Vector2(s * 0.7, 0), c, 2.0)
+		"amulet":
+			draw_arc(m + Vector2(0, -s * 0.4), s * 0.8, PI * 0.1, PI * 0.9, 10, Color(0.8, 0.7, 0.4), 2.0)
+			draw_circle(m + Vector2(0, s * 0.4), s * 0.5, c)
+		"ring":
+			draw_arc(m, s * 0.7, 0, TAU, 16, Color(0.9, 0.78, 0.4), 3.0)
+			draw_circle(m + Vector2(0, -s * 0.7), s * 0.3, c)
+
+
+func _tooltip(p: Vector2, it, compare) -> void:
+	var lines := Items.stat_lines(it)
+	var w := 270.0
+	var h := 58.0 + lines.size() * 18.0 + (40.0 if compare != null else 0.0)
+	var vs := get_viewport_rect().size
+	var r := Rect2(minf(p.x + 16, vs.x - w - 8), minf(p.y + 8, vs.y - h - 8), w, h)
+	draw_rect(r, Color(0.04, 0.04, 0.05, 0.96))
+	draw_rect(r, Items.RARITY_COLORS[it.rarity], false, 1.5)
+	_str(r.position + Vector2(10, 22), it.name, 16, Items.RARITY_COLORS[it.rarity])
+	_str(r.position + Vector2(10, 40), "%s %s  ·  item level %d" % [Items.RARITY_NAMES[it.rarity], Items.SLOT_NAMES[it.slot], it.ilvl], 12, DIM)
+	var yy := 60.0
+	for l in lines:
+		_str(r.position + Vector2(10, yy), l, 14, Color(0.6, 0.75, 1.0))
+		yy += 18
+	if compare != null:
+		var diff := Items.score(it) - Items.score(compare)
+		var txt := "Better than equipped %s" % compare.name if diff > 0.5 else ("Worse than equipped %s" % compare.name if diff < -0.5 else "About equal to equipped")
+		_str(r.position + Vector2(10, yy + 6), txt, 13, Color(0.5, 1, 0.5) if diff > 0.5 else (Color(1, 0.5, 0.45) if diff < -0.5 else DIM))
+	else:
+		_str(r.position + Vector2(10, yy + 6), "Melts down for %d gold" % it.value, 12, DIM)
+
+
+func _draw_travel(vs: Vector2) -> void:
+	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.55))
+	var t := game.travel_targets()
+	var w := 420.0
+	var h := 70.0 + t.size() * 44.0
+	var r := Rect2((vs.x - w) * 0.5, (vs.y - h) * 0.5, w, h)
+	_panel(r)
+	_str(r.position + Vector2(0, 32), "Waypoint Travel", 22, Color(0.6, 0.85, 1.0), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var mp := get_viewport().get_mouse_position()
+	for i in t.size():
+		var br := Rect2(r.position + Vector2(20, 50 + i * 44), Vector2(w - 40, 36))
+		_travel_rects.append(br)
+		draw_rect(br, Color(0.12, 0.16, 0.22, 0.95) if not br.has_point(mp) else Color(0.18, 0.24, 0.32, 0.98))
+		draw_rect(br, Color(0.45, 0.65, 0.9), false, 1.5)
+		_str(br.position + Vector2(14, 24), "%d   %s" % [i + 1, t[i][0]], 16, TEXT)

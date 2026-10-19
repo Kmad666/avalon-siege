@@ -11,6 +11,9 @@ const KINDS := {
 	"skeleton": {"hp": 30.0, "spd": 3.0, "dmg": 8.0, "r": 0.4, "xp": 2, "gold": 0.6, "cd": 1.8, "reach": 0.4, "ranged": 10.0},
 	"ogre": {"hp": 260.0, "spd": 2.5, "dmg": 24.0, "r": 0.85, "xp": 12, "gold": 1.0, "cd": 1.6, "reach": 0.7},
 	"dark_knight": {"hp": 750.0, "spd": 3.4, "dmg": 30.0, "r": 0.62, "xp": 30, "gold": 1.0, "cd": 1.2, "reach": 0.7},
+	"wolf": {"hp": 34.0, "spd": 6.0, "dmg": 7.0, "r": 0.48, "xp": 2, "gold": 0.6, "cd": 0.8, "reach": 0.5},
+	"shaman": {"hp": 48.0, "spd": 3.0, "dmg": 9.0, "r": 0.45, "xp": 4, "gold": 0.8, "cd": 2.0, "reach": 0.4, "ranged": 9.0},
+	"necro": {"hp": 75.0, "spd": 2.8, "dmg": 11.0, "r": 0.42, "xp": 6, "gold": 0.9, "cd": 2.2, "reach": 0.4, "ranged": 10.0},
 	# Camelot
 	"knight": {"hp": 90.0, "spd": 5.6, "dmg": 11.0, "r": 0.42, "cd": 0.8, "reach": 0.55},
 	"footman": {"hp": 22.0, "spd": 4.0, "dmg": 5.5, "r": 0.38, "cd": 0.9, "reach": 0.5},
@@ -18,10 +21,14 @@ const KINDS := {
 	"archer": {"hp": 30.0, "spd": 3.0, "dmg": 8.0, "r": 0.4, "cd": 1.8, "reach": 0.4, "ranged": 10.0},
 	"paladin": {"hp": 260.0, "spd": 2.5, "dmg": 24.0, "r": 0.8, "cd": 1.6, "reach": 0.7},
 	"champion": {"hp": 750.0, "spd": 3.4, "dmg": 30.0, "r": 0.62, "cd": 1.2, "reach": 0.7},
+	"cavalry": {"hp": 34.0, "spd": 6.0, "dmg": 7.0, "r": 0.5, "cd": 0.8, "reach": 0.55},
+	"cleric": {"hp": 48.0, "spd": 3.0, "dmg": 5.0, "r": 0.42, "cd": 1.2, "reach": 0.5},
+	"battlemage": {"hp": 75.0, "spd": 2.8, "dmg": 14.0, "r": 0.42, "cd": 2.2, "reach": 0.4, "ranged": 10.0},
 	"worker": {"hp": 40.0, "spd": 4.6, "dmg": 0.0, "r": 0.34, "cd": 1.0, "reach": 0.4},
 }
 ## Camelot's answer to each kind of Dread soldier.
-const MIRROR := {"goblin": "footman", "orc": "swordsman", "skeleton": "archer", "ogre": "paladin", "dark_knight": "champion"}
+const MIRROR := {"goblin": "footman", "orc": "swordsman", "skeleton": "archer", "ogre": "paladin", "dark_knight": "champion",
+	"wolf": "cavalry", "shaman": "cleric", "necro": "battlemage"}
 const MAX_ENEMIES := 260
 const MAX_SOLDIERS := 160
 
@@ -49,6 +56,8 @@ func setup(g: Game) -> void:
 		"knight": [Models.ally_mesh(), 24], "footman": [Models.ally_mesh(), 160], "swordsman": [Models.swordsman_mesh(), 160],
 		"archer": [Models.archer_mesh(), 160], "paladin": [Models.paladin_mesh(), 40], "champion": [Models.champion_mesh(), 12],
 		"worker": [Models.worker_mesh(), 16],
+		"wolf": [Models.wolf_rider_mesh(), 120], "shaman": [Models.shaman_mesh(), 60], "necro": [Models.necromancer_mesh(), 40],
+		"cavalry": [Models.cavalry_mesh(), 120], "cleric": [Models.cleric_mesh(), 60], "battlemage": [Models.battlemage_mesh(), 40],
 	}
 	for k in meshes:
 		var mm := MultiMesh.new()
@@ -93,7 +102,7 @@ func make(kind: String, p: Vector3, team := 1, power := 1.0) -> Unit:
 func spawn(kind: String, p: Vector3, mode: String, power := 1.0, elite := false) -> Unit:
 	if enemies.size() >= MAX_ENEMIES:
 		return null
-	var u := make(kind, p, 1, power)
+	var u := make(kind, p, 1, power * game.diff)
 	u.mode = mode
 	if elite:
 		u.elite = true
@@ -210,7 +219,7 @@ func hurt(u: Unit, amount: float, from_dir := Vector3.ZERO, knock := 0.0, color 
 	u.hp -= amount
 	u.flash = 0.18
 	u.aggro = true
-	if knock > 0.0 and not u.boss and u.mini < 0:
+	if knock > 0.0 and not u.boss and u.mini < 0 and not u.structure:
 		var kb := knock / (1.0 + u.r * 2.0)
 		u.vel += from_dir * kb
 	game.fx.number(u.pos + Vector3(0, 1.4 * u.scale, 0), str(int(round(amount))), color)
@@ -276,15 +285,21 @@ func _update_enemies(dt: float) -> void:
 	var ui := 0
 	for u in enemies:
 		ui += 1
-		if not u.alive:
+		if not u.alive or u.structure:
 			continue
 		u.atk_t -= dt
 		u.flash = maxf(0.0, u.flash - dt)
 		u.lunge = maxf(0.0, u.lunge - dt * 4.0)
+		# Idle lairs far from Merlin sleep: rare decisions, no movement.
+		var dormant := u.mode == "camp" and u.t_kind == "" and not u.aggro and absf(hp.x - u.pos.x) + absf(hp.z - u.pos.z) > 40.0
 		u.think -= dt
 		if u.think <= 0.0:
-			u.think = 0.11 + randf() * 0.05
+			u.think = (0.5 if dormant else 0.11) + randf() * 0.05
 			_decide(u, hero_ok, hp, castle_p)
+		if dormant and u.path_dir == Vector3.ZERO:
+			continue
+		if u.kind == "shaman" or u.kind == "necro":
+			_enemy_skill(u, dt)
 		var desire := Vector3.ZERO
 		var target_pos := Vector3.ZERO
 		var target_r := 0.0
@@ -317,7 +332,7 @@ func _update_enemies(dt: float) -> void:
 					var aim := target_pos + Vector3(0, 0.8, 0)
 					if u.t_kind == "castle":
 						aim = target_pos + Vector3(randf_range(-2, 2), 2.0, randf_range(-2, 2))
-					game.fx.shoot("earrow", u.pos + Vector3(0, 1.0, 0), aim, 13.0, u.dmg, 1)
+					game.fx.shoot("earrow" if u.kind == "skeleton" else "dark", u.pos + Vector3(0, 1.0, 0), aim, 13.0, u.dmg, 1)
 				if dist < u.ranged * 0.45 and u.t_kind != "castle":
 					desire = -to_t / maxf(dist, 0.01)
 			elif in_melee:
@@ -342,6 +357,37 @@ func _update_enemies(dt: float) -> void:
 		if (ui + _frame) % 2 == 0:
 			u.sep = _separation(u, bucket)
 		_step(u, desire * u.speed + u.sep * 3.0, dt, 7.0)
+
+
+## Shamans heal the Dread host around them; necromancers raise skeletons.
+func _enemy_skill(u: Unit, dt: float) -> void:
+	u.skill_t -= dt
+	if u.skill_t > 0.0:
+		return
+	if u.kind == "shaman":
+		u.skill_t = 3.0
+		var healed := false
+		for e: Unit in enemies_near(u.pos, 6.0):
+			if e.hp < e.max_hp:
+				e.hp = minf(e.max_hp, e.hp + 12.0 + u.max_hp * 0.25)
+				healed = true
+		if healed:
+			game.fx.ring(u.pos, 0.3, 6.0, Color(0.3, 1.0, 0.35), 0.5, 0.12)
+	else:
+		u.skill_t = 7.0
+		if u.t_kind == "" and u.mode == "camp":
+			return
+		if enemies.size() < MAX_ENEMIES - 20:
+			game.fx.ring(u.pos, 0.3, 3.0, Color(0.7, 0.3, 1.0), 0.5, 0.12)
+			for k in 2:
+				var p := maze.collide(u.pos + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5)), 0.4)
+				var s := spawn("skeleton", p, u.mode, maxf(0.6, u.max_hp / 75.0 / game.diff * 0.6), false)
+				if s != null:
+					s.camp_id = u.camp_id
+					s.home = u.home
+					s.xp = 1
+					s.gold_chance = 0.2
+					game.fx.burst(p + Vector3(0, 0.4, 0), Color(0.7, 0.3, 1.0), 6, 3.0, 0.12)
 
 
 func _step(u: Unit, want: Vector3, dt: float, accel: float) -> void:
@@ -479,6 +525,17 @@ func _update_soldiers(dt: float) -> void:
 		u.atk_t -= dt
 		u.flash = maxf(0.0, u.flash - dt)
 		u.lunge = maxf(0.0, u.lunge - dt * 4.0)
+		if u.kind == "cleric":
+			u.skill_t -= dt
+			if u.skill_t <= 0.0:
+				u.skill_t = 3.0
+				var healed := false
+				for f: Unit in friends_near(u.pos, 6.0):
+					if f.hp < f.max_hp:
+						f.hp = minf(f.max_hp, f.hp + 14.0 + u.max_hp * 0.25)
+						healed = true
+				if healed:
+					game.fx.ring(u.pos, 0.3, 6.0, Color(1.0, 0.9, 0.45), 0.5, 0.12)
 		u.think -= dt
 		if u.think <= 0.0:
 			u.think = 0.11 + randf() * 0.05
@@ -530,6 +587,8 @@ func _update_soldiers(dt: float) -> void:
 					if u.t_kind == "citadel":
 						game.damage_citadel(u.dmg * 0.25, false)
 						game.fx.shoot("arrow", u.pos + Vector3(0, 1.0, 0), tp + Vector3(randf_range(-2, 2), 3.0, randf_range(-2, 2)), 24.0, 0.0, 0)
+					elif u.kind == "battlemage":
+						game.fx.shoot("fireball", u.pos + Vector3(0, 1.0, 0), tp + Vector3(0, 1.0, 0), 11.0, u.dmg, 0, null, 1.8)
 					else:
 						game.fx.shoot("arrow", u.pos + Vector3(0, 1.0, 0), tp + u.t_ally.vel * 0.3 + Vector3(0, 0.7, 0), 24.0, u.dmg, 0)
 			elif dist < u.r + tr + u.reach:
@@ -708,13 +767,15 @@ func render() -> void:
 	for k in mms:
 		groups[k] = []
 	for u in enemies:
-		(groups[u.kind] as Array).append(u)
+		if groups.has(u.kind):
+			(groups[u.kind] as Array).append(u)
 	for list: Array[Unit] in [allies, soldiers, workers]:
 		for a in list:
 			if a.alive:
 				(groups[a.kind] as Array).append(a)
 	for u in dying:
-		(groups[u.kind] as Array).append(u)
+		if groups.has(u.kind):
+			(groups[u.kind] as Array).append(u)
 	for k in mms:
 		var mm: MultiMesh = mms[k]
 		var list: Array = groups[k]

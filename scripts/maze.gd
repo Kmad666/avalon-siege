@@ -10,8 +10,8 @@ const WALL := 1
 const KEEP := 2      # the player's castle (solid)
 const CITADEL := 3   # the enemy fortress (solid)
 
-const CELLS := 26
-const G := CELLS * 2 + 1   # 53 tiles across
+const CELLS := 34
+const G := CELLS * 2 + 1   # 69 tiles across
 const T := 3.0             # tile size in metres
 const WALL_H := 1.5
 
@@ -49,7 +49,7 @@ func generate(seed_v: int) -> void:
 	_clear(Rect2i(G - 12, G - 12, 11, 11))
 	_clear(Rect2i(1, 1, 10, 10))
 	# A few broad avenues so armies can flow and the hero has room to kite.
-	for k in 3:
+	for k in 5:
 		var y := rng.randi_range(6, CELLS - 6) * 2 + 1
 		var x0 := rng.randi_range(4, 14)
 		_clear(Rect2i(x0, y, rng.randi_range(8, 16), 1))
@@ -141,7 +141,7 @@ func _braid(chance: float) -> void:
 
 func _carve_rooms() -> void:
 	var tries := 0
-	while rooms.size() < 22 and tries < 400:
+	while rooms.size() < 34 and tries < 700:
 		tries += 1
 		var w := rng.randi_range(3, 6) * 2 - 1
 		var h := rng.randi_range(3, 6) * 2 - 1

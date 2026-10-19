@@ -45,3 +45,5 @@ var mini := -1            # mini-boss index, or -1
 var title := ""           # display name for mini-bosses
 var job = null            # worker: the gold vein it is mining
 var cargo := 0.0          # worker: gold carried
+var skill_t := 2.0         # cooldown for special abilities (heal, raise dead)
+var structure := false     # immobile building (Dread Ward)

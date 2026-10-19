@@ -21,7 +21,7 @@ func _init(parent: Node3D, mesh: Mesh, capacity: int, material: Material) -> voi
 	mmi.multimesh = mm
 	mmi.material_override = material
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mmi.custom_aabb = AABB(Vector3(-50, -10, -50), Vector3(250, 60, 250))
+	mmi.custom_aabb = AABB(Vector3(-50, -10, -50), Vector3(Maze.G * Maze.T + 100, 60, Maze.G * Maze.T + 100))
 	parent.add_child(mmi)
 
 
