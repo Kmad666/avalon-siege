@@ -4,30 +4,31 @@ A low-poly isometric fantasy action RPG made in **Godot 4.7**, playable in the b
 
 **Play:** https://kmad666.github.io/avalon-siege/
 
-Leave Camelot in the corner of the realm, fight your way through a living labyrinth, gather gold, timber and mana crystals, haul them home to build up your castle — and break the Dread Citadel in the far corner before its army breaks you.
+You are **Merlin**. Leave Camelot in the corner of the realm, venture into a living labyrinth, mine gold, hunt for ancient spellbooks and monstrous mini-bosses — and while Camelot's armies clash with the Dread Army mid-maze, break the Dread Citadel in the far corner.
 
 ## How to play
-- **Move** by clicking and holding (Diablo style) or with **WASD / arrow keys**. Your weapons **attack on their own** (Vampire Survivors style).
-- **Gather** by standing next to a **golden oak** (timber), a **gold-veined boulder** (gold) or a **mana crystal** (crystal). Your pack holds a limited amount.
-- **Return to Camelot** to bank your pack automatically, refill potions and heal fast. While home, build upgrades with **1–8** or by clicking:
-  Stone Walls · Archer Towers · Barracks (knights that escort you) · Forge · Armory · Mage Tower (castle lightning) · Stables · Shrine
-- **Waves**: every minute or so the Dread Army marches out of the Citadel through the maze toward Camelot. Every 5th wave is led by a Dark Knight. If Camelot falls, you lose.
-- **Level up** from soul gems dropped by slain foes and pick one of three blessings: new weapons (Excalibur, Arcane Bolts, Fireball, Holy Nova, Whirling Axes, Chain Lightning) or passives (Might, Haste, Vigor, Swiftness, Magnetism, Woodsman).
-- **Win** by destroying the **Dread Citadel**. It shoots back and summons guards when you get close.
-- If you fall, you respawn at Camelot after a few seconds — but your pack is lost.
+- **Move** by clicking and holding (Diablo style) or with **WASD / arrow keys**. Merlin's **spells cast on their own** (Vampire Survivors style), led by **Chain Lightning**.
+- **Gold** is the only currency. Mine **gold-veined boulders** by standing next to them and carry the ore home. **Coins** dropped by slain foes go straight to the treasury.
+- **At Camelot**, bank your ore, refill potions, heal fast, and build with **1–9**:
+  Stone Walls · Archer Tower · **Miners** (peasants who mine gold for you) · **War Camp** (stronger, bigger counter-waves) · Barracks (knights that escort Merlin) · Forge · Armory · Mage Tower · Shrine
+- **The war**: every ~2 minutes the Dread Army marches from the Citadel — and Camelot sends out a **mirrored host** (footmen, swordsmen, archers, paladins, a champion). The armies meet in the middle of the maze. Tip the balance with your spells and upgrades. If Camelot falls, you lose.
+- **Spellbooks** glow on pedestals in hidden dead ends: each lets Merlin learn or upgrade a spell — Chain Lightning, Arcane Missiles, Fireball, Arcane Nova, Spell Orbs, Healing Light.
+- **Six mini-bosses** lair in the glades — Gorm the Goblin King, Urzag the Warlord, the Bone Lich, Grukk the Troll King, the Ogre Magus and the Black Knight. Each drops a **relic** with a permanent bonus.
+- **Level up** from soul gems and pick spells or blessings (Might, Haste, Vigor, Swiftness, Magnetism, Prospector).
+- **Win** by destroying the **Dread Citadel**. It shoots back, regenerates, and summons guards.
+- Lair monsters leave your soldiers and miners alone unless provoked — but they'll fight Merlin and his escort.
 
 **Keys:** SPACE / Q potion · M map · mouse wheel zoom · P pause · F fullscreen · G graphics quality · N sound
 
 ## The realm
 - The maze is generated fresh each game: a braided labyrinth with loops, open glades and a few long avenues.
-- It changes as you go: green pine forests near Camelot, mossy stone walls in the middle, and ashen ruins with obsidian spikes and ember cracks near the Citadel. Enemies and resources get richer the further you go.
-- Monster camps guard the glades: goblins, orcs, skeleton archers and ogres, sometimes led by a tougher elite.
+- Green pine forests near Camelot, mossy stone walls in the middle, ashen ruins with obsidian spikes and ember cracks near the Citadel. Gold veins get richer the further you go.
 
 ## Performance
 Built for laptops with integrated graphics:
 - **GL Compatibility** renderer, no real-time shadows (blob shadows instead), per-vertex lighting.
 - All art is generated in code as flat-shaded, vertex-coloured low-poly meshes sharing one material.
-- Every enemy type, knight, projectile, particle, pickup and resource type is drawn with a **single MultiMesh** — a busy fight with 200+ enemies is still only ~100 draw calls.
+- Every unit type (both armies, miners, knights), projectile, particle, pickup and resource type is drawn with a **single MultiMesh** — a busy fight with 200+ enemies is still only ~100 draw calls.
 - No physics engine: movement uses grid collision and Dijkstra **flow fields**, so hundreds of enemies path through the maze cheaply. Enemies "think" ~8× per second, staggered, and push apart every other frame.
 - **Graphics quality** drops automatically if the game runs below ~42 FPS (Low renders 3D at 66% resolution and halves particles). Press **G** to cycle Low / Medium / High.
 - Sound effects are synthesised at startup — there are no asset files at all.

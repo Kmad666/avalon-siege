@@ -93,7 +93,7 @@ func setup(g: Game) -> void:
 	b_ring = Batch.new(self, Models.ring_mesh(), 40, Geo.mat_add())
 	b_slash = Batch.new(self, Models.slash_mesh(), 20, Geo.mat_add())
 	b_beam = Batch.new(self, Models.cube_mesh(), 80, Geo.mat_add())
-	b_axe = Batch.new(self, Models.axe_mesh(), 12, Geo.mat())
+	b_axe = Batch.new(self, Models.rune_mesh(), 12, Geo.mat_glow())
 
 
 # ------------------------------------------------------------- spawners
@@ -279,6 +279,11 @@ func _update_projs(dt: float) -> void:
 				burst(p.pos, Color(0.8, 0.75, 0.6), 2, 2.0, 0.08, 1.0)
 			p.dead = true
 			continue
+		if p.team == 0 and p.dmg <= 0.0:
+			# Cosmetic volley (soldiers shooting at the citadel).
+			if (p.pos - game.maze.citadel_pos).length() < 5.0:
+				p.dead = true
+			continue
 		if p.team == 0:
 			var hits := horde.enemies_near(p.pos, 0.35)
 			if not hits.is_empty():
@@ -303,11 +308,10 @@ func _update_projs(dt: float) -> void:
 				burst(p.pos, Color(1, 0.3, 0.2), 4, 2.5, 0.08)
 				p.dead = true
 				continue
-			for a in horde.allies:
-				if a.alive and Vector2(p.pos.x - a.pos.x, p.pos.z - a.pos.z).length() < a.r + 0.15:
-					horde._hurt_ally(a, p.dmg)
-					p.dead = true
-					break
+			var fr := horde.friends_near(p.pos, 0.2)
+			if not fr.is_empty():
+				horde.hurt_friend(fr[0], p.dmg)
+				p.dead = true
 	var j := projs.size() - 1
 	while j >= 0:
 		if projs[j].dead:
@@ -357,8 +361,6 @@ func _update_picks(dt: float) -> void:
 		var to := hp - p.pos
 		var d := to.length()
 		var can := hero.alive
-		if p.kind == "coin" and hero.carry_total() >= hero.carry_cap:
-			can = false
 		if p.kind == "potion" and hero.potions >= hero.potion_max:
 			can = false
 		if can and (d < pr or p.pulled):
@@ -425,7 +427,8 @@ func render() -> void:
 					c = Color(0.35, 0.7, 1.0); sc = 1.25
 				b_gem.add(Basis(Vector3.UP, p.t * 2.0).scaled(Vector3(sc, sc, sc)), p.pos + Vector3(0, bob, 0), c)
 			"coin":
-				b_coin.add(Basis(Vector3.UP, p.t * 4.0), p.pos + Vector3(0, bob, 0), Color.WHITE)
+				var cs := 1.0 + minf(1.2, p.val / 12.0)
+				b_coin.add(Basis(Vector3.UP, p.t * 4.0).scaled(Vector3(cs, cs, cs)), p.pos + Vector3(0, bob, 0), Color.WHITE)
 			"potion":
 				b_potion.add(Basis(Vector3.UP, p.t), p.pos + Vector3(0, bob - 0.15, 0), Color.WHITE)
 	for r in rings:
@@ -452,10 +455,11 @@ func render() -> void:
 		var y := x.cross(z).normalized()
 		var bb := Basis(x * bm.w, y * bm.w, z * l)
 		b_beam.add(bb, (bm.a + bm.b) * 0.5, Color(bm.col.r * f3, bm.col.g * f3, bm.col.b * f3))
-	# Hero's orbiting axes.
+	# Merlin's orbiting spell orbs.
 	var hero := game.hero
 	if hero.alive:
-		for a in hero.axe_positions():
-			b_axe.add(Basis(Vector3.UP, time * 14.0), a, Color.WHITE)
+		for a in hero.orb_positions():
+			b_orb.add(Basis(Vector3.UP, time * 5.0).scaled(Vector3(0.38, 0.38, 0.38)), a, Color(0.65, 0.45, 1.0))
+			b_axe.add(Basis(Vector3.UP, time * 3.0), a - Vector3(0, 0.6, 0), Color(0.4, 0.3, 0.8))
 	for b in [b_arrow, b_earrow, b_orb, b_part, b_gem, b_coin, b_potion, b_ring, b_slash, b_beam, b_axe]:
 		b.finish()

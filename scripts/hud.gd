@@ -142,6 +142,12 @@ func _draw_world_text() -> void:
 		_str(sp - Vector2(40, 0), n[1], size, c, HORIZONTAL_ALIGNMENT_CENTER, 80)
 	# HP bars over elites, bosses, and wounded knights.
 	for u in game.horde.enemies:
+		if u.mini >= 0:
+			if (u.pos - game.hero.position).length() < 18.0:
+				var sm := cam.unproject_position(u.pos + Vector3(0, 2.4 * u.scale, 0))
+				_str(sm - Vector2(100, 8), u.title, 15, Color(1, 0.8, 0.4), HORIZONTAL_ALIGNMENT_CENTER, 200)
+				_bar(Rect2(sm - Vector2(45, 0), Vector2(90, 6)), u.hp / u.max_hp, Color(0.95, 0.55, 0.15))
+			continue
 		if (u.elite or u.boss or u.kind == "ogre") and u.hp < u.max_hp:
 			var sp2 := cam.unproject_position(u.pos + Vector3(0, 2.0 * u.scale + (1.0 if u.kind == "ogre" else 0.0), 0))
 			_bar(Rect2(sp2 - Vector2(22, 0), Vector2(44, 4)), u.hp / u.max_hp, Color(0.9, 0.2, 0.15))
@@ -161,7 +167,7 @@ func _draw_world_text() -> void:
 func _draw_top_left() -> void:
 	var h := game.hero
 	_panel(Rect2(10, 10, 300, 128))
-	_str(Vector2(22, 34), "Sir Percival", 18, TEXT)
+	_str(Vector2(22, 34), "Merlin", 18, TEXT)
 	_str(Vector2(200, 34), "Level %d" % h.level, 18, Color(0.6, 0.85, 1.0))
 	_bar(Rect2(22, 44, 276, 16), h.hp / h.max_hp, Color(0.8, 0.18, 0.15))
 	_str(Vector2(22, 57), "%d / %d" % [int(h.hp), int(h.max_hp)], 13, TEXT, HORIZONTAL_ALIGNMENT_CENTER, 276)
@@ -178,10 +184,9 @@ func _draw_top_left() -> void:
 	# carried pack
 	var tot := h.carry_total()
 	var pack_col := Color(1, 0.55, 0.35) if tot >= h.carry_cap - 0.01 else DIM
-	_str(Vector2(22, 125), "Pack %d/%d" % [int(tot), int(h.carry_cap)], 15, pack_col)
-	_res(Vector2(130, 125), h.carry.gold, GOLD)
-	_res(Vector2(185, 125), h.carry.wood, WOOD)
-	_res(Vector2(240, 125), h.carry.crystal, CRYS)
+	_str(Vector2(22, 125), "Ore pack", 15, pack_col)
+	_res(Vector2(100, 125), tot, GOLD)
+	_str(Vector2(150, 125), "/ %d" % int(h.carry_cap), 15, pack_col)
 	# weapons list
 	var y := 156.0
 	for k in h.weapons:
@@ -189,6 +194,9 @@ func _draw_top_left() -> void:
 		y += 16
 	for k in h.passives:
 		_str(Vector2(16, y), "%s %d" % [Hero.PASSIVES[k].name, h.passives[k]], 13, DIM)
+		y += 16
+	for r in h.relics:
+		_str(Vector2(16, y), "Relic: " + r, 13, GOLD)
 		y += 16
 
 
@@ -220,10 +228,13 @@ func _draw_top_right(vs: Vector2) -> void:
 	var x := vs.x - w - 10
 	_panel(Rect2(x, 10, w, 74))
 	_str(Vector2(x + 12, 30), "Treasury", 14, DIM)
-	var t := game.castle.treasury
-	_res(Vector2(x + 12, 54), t.gold, GOLD)
-	_res(Vector2(x + 82, 54), t.wood, WOOD)
-	_res(Vector2(x + 152, 54), t.crystal, CRYS)
+	draw_circle(Vector2(x + 20, 50), 8, GOLD)
+	draw_circle(Vector2(x + 20, 50), 5, GOLD.darkened(0.25))
+	_str(Vector2(x + 34, 57), "%d gold" % int(game.castle.gold), 20, GOLD)
+	var army := 0
+	for s in game.horde.soldiers:
+		if s.alive: army += 1
+	_str(Vector2(x + 140, 57), "%d army" % army, 13, Color(0.6, 0.75, 1.0))
 	var mins := int(game.play_time) / 60
 	var secs := int(game.play_time) % 60
 	_str(Vector2(x + 12, 76), "%d:%02d   %d slain" % [mins, secs, game.kills], 13, DIM)
@@ -244,9 +255,9 @@ func _draw_upgrades(vs: Vector2) -> void:
 	var x0 := maxf(10.0, (avail - total) * 0.5 + 10.0)
 	var y0 := vs.y - bh - 12.0
 	if not home:
-		_str(Vector2(x0, y0 + bh - 4), "Return to Camelot to deliver your pack and build upgrades (1-8)", 15, DIM)
+		_str(Vector2(x0, y0 + bh - 4), "Return to Camelot to bank ore and build upgrades (1-9)", 15, DIM)
 		return
-	_str(Vector2(x0, y0 - 8), "CAMELOT — click or press 1-8 to build", 14, EDGE)
+	_str(Vector2(x0, y0 - 8), "CAMELOT — click or press 1-9 to build", 14, EDGE)
 	var mp := get_viewport().get_mouse_position()
 	for i in n:
 		var u: Dictionary = Castle.UPGRADES[i]
@@ -267,13 +278,8 @@ func _draw_upgrades(vs: Vector2) -> void:
 			_str(r.position + Vector2(6, 44), "MAX", 13, GOLD)
 		else:
 			var cost := c.cost_of(u.key)
-			var cx := 6.0
-			for res in cost:
-				var col: Color = {"gold": GOLD, "wood": WOOD, "crystal": CRYS}[res]
-				var have: float = c.treasury[res]
-				draw_circle(r.position + Vector2(cx + 4, 39), 4, col)
-				_str(r.position + Vector2(cx + 10, 44), str(cost[res]), 13, col if have >= cost[res] else Color(0.9, 0.35, 0.3))
-				cx += 46.0 * minf(1.0, scale)
+			draw_circle(r.position + Vector2(10, 39), 4, GOLD)
+			_str(r.position + Vector2(18, 44), str(cost), 13, GOLD if c.gold >= cost else Color(0.9, 0.35, 0.3))
 		if r.has_point(mp):
 			_str(Vector2(x0, y0 - 26), u.desc, 14, TEXT)
 		_str(r.position + Vector2(6, 58), "", 11, DIM)
@@ -297,11 +303,23 @@ func _draw_minimap(vs: Vector2) -> void:
 		var t := Maze.tile_of(n.pos)
 		if m.explored[Maze.idx(t)] == 0:
 			continue
-		var col: Color = {"wood": WOOD, "gold": GOLD, "crystal": CRYS}[n.kind]
-		draw_rect(Rect2(Vector2(n.pos.x, n.pos.z) / Maze.T - half - Vector2(0.6, 0.6), Vector2(1.2, 1.2)), col)
+		draw_rect(Rect2(Vector2(n.pos.x, n.pos.z) / Maze.T - half - Vector2(0.6, 0.6), Vector2(1.2, 1.2)), GOLD)
+	for b in game.nodes.books:
+		if not b.taken and m.explored[Maze.idx(Maze.tile_of(b.pos))] != 0:
+			draw_rect(Rect2(Vector2(b.pos.x, b.pos.z) / Maze.T - half - Vector2(1.1, 1.1), Vector2(2.2, 2.2)), Color(0.5, 0.75, 1.0))
+	for s in game.horde.soldiers:
+		if s.alive:
+			draw_rect(Rect2(Vector2(s.pos.x, s.pos.z) / Maze.T - half - Vector2(0.5, 0.5), Vector2(1, 1)), Color(0.4, 0.6, 1.0))
+	for w in game.horde.workers:
+		if w.alive:
+			draw_rect(Rect2(Vector2(w.pos.x, w.pos.z) / Maze.T - half - Vector2(0.5, 0.5), Vector2(1, 1)), Color(0.9, 0.85, 0.6))
 	for u in game.horde.enemies:
 		var p := Vector2(u.pos.x, u.pos.z) / Maze.T
 		if u.mode == "camp" and m.explored[Maze.idx(Maze.tile_of(u.pos))] == 0:
+			continue
+		if u.mini >= 0:
+			if m.explored[Maze.idx(Maze.tile_of(u.pos))] != 0:
+				draw_circle(p - half, 1.6, Color(1, 0.6, 0.1))
 			continue
 		draw_rect(Rect2(p - half - Vector2(0.5, 0.5), Vector2(1, 1)), Color(1, 0.25, 0.2) if not u.boss else Color(1, 0.8, 0.2))
 	for a in game.horde.allies:
@@ -320,7 +338,7 @@ func _draw_minimap(vs: Vector2) -> void:
 
 func _draw_levelup(vs: Vector2) -> void:
 	draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.55))
-	_str(Vector2(0, vs.y * 0.25), "LEVEL UP!  Choose a blessing", 30, Color(0.6, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+	_str(Vector2(0, vs.y * 0.25), game.choice_title, 30, Color(0.6, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	var n := game.choices.size()
 	var cw := 250.0
 	var ch := 150.0
@@ -335,7 +353,7 @@ func _draw_levelup(vs: Vector2) -> void:
 		var hover := r.has_point(mp)
 		draw_rect(r, Color(0.1, 0.12, 0.16, 0.95) if not hover else Color(0.16, 0.2, 0.26, 0.98))
 		draw_rect(r, Color(0.6, 0.85, 1.0) if hover else EDGE, false, 2.0)
-		var tag := "NEW WEAPON" if c.type == "weapon" and c.level == 1 else ("WEAPON" if c.type == "weapon" else "BLESSING")
+		var tag := "NEW SPELL" if c.type == "weapon" and c.level == 1 else ("SPELL" if c.type == "weapon" else "BLESSING")
 		_str(r.position + Vector2(14, 26), "%d   %s" % [i + 1, tag], 13, DIM)
 		_str(r.position + Vector2(14, 60), c.name, 22, TEXT)
 		if c.level > 0:
@@ -363,7 +381,7 @@ func _draw_end(vs: Vector2, won: bool) -> void:
 		"Waves survived  %d" % game.wave,
 		"Foes slain  %d" % game.kills,
 		"Hero level  %d" % game.hero.level,
-		"Resources delivered  %d" % int(game.stats_delivered),
+		"Gold earned  %d" % int(game.stats_delivered),
 	]
 	for i in lines.size():
 		_str(Vector2(0, vs.y * 0.36 + 48 + i * 26), lines[i], 18, TEXT, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
@@ -376,12 +394,12 @@ func _draw_title(vs: Vector2) -> void:
 	_str(Vector2(0, y), "AVALON SIEGE", 64, GOLD, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	_str(Vector2(0, y + 40), "Gather. Build. Break the Dread Citadel.", 20, TEXT, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	var lines := [
-		"Move: click & hold (or WASD / arrows). Your weapons strike on their own.",
-		"Stand by golden oaks, gold boulders and mana crystals to gather them.",
-		"Carry your pack home to Camelot to bank it, then build upgrades with 1-8.",
-		"Every wave, the Dread Army marches from the far corner. Hold Camelot!",
-		"Level up from soul gems to gain new weapons and blessings.",
-		"Find the Dread Citadel at the far side of the maze and destroy it to win.",
+		"You are Merlin. Move: click & hold (or WASD / arrows). Your spells cast on their own.",
+		"Mine gold veins and carry the ore home; coins from slain foes go straight to the treasury.",
+		"At Camelot spend gold on upgrades (1-9): hire Miners, raise towers, train your army.",
+		"Each wave, Camelot's host marches out to meet the Dread Army in the maze. Tip the battle!",
+		"Seek glowing spellbooks and slay the six mini-bosses for relics of power.",
+		"Destroy the Dread Citadel in the far corner to win. Lose Camelot and all is lost.",
 		"",
 		"SPACE potion   ·   M map   ·   wheel zoom   ·   P pause   ·   F fullscreen   ·   G graphics   ·   N sound",
 	]

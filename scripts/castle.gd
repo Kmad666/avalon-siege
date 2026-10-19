@@ -1,17 +1,18 @@
 class_name Castle
 extends Node3D
-## Your home: Camelot keep. Holds the treasury, takes deliveries, and turns
-## gold / timber / crystal into upgrades for the castle, the hero and the army.
+## Camelot. Holds the treasury, takes deliveries, sends counter-waves, and
+## turns gold into upgrades for the castle, the wizard and the army.
 
 const UPGRADES := [
-	{"key": "walls", "name": "Stone Walls", "desc": "+250 castle HP, full repair", "cost": {"wood": 25, "gold": 10}},
-	{"key": "towers", "name": "Archer Tower", "desc": "builds a tower that shoots raiders", "cost": {"wood": 25, "gold": 15}},
-	{"key": "barracks", "name": "Barracks", "desc": "+2 knights escort you", "cost": {"gold": 25, "wood": 15}},
-	{"key": "forge", "name": "Forge", "desc": "+15% damage for all", "cost": {"gold": 20, "crystal": 10}},
-	{"key": "armory", "name": "Armory", "desc": "+25 max HP, +1.5 armour", "cost": {"gold": 20, "wood": 15}},
-	{"key": "mage", "name": "Mage Tower", "desc": "-7% cooldowns, castle lightning", "cost": {"crystal": 20, "gold": 15}},
-	{"key": "stables", "name": "Stables", "desc": "+12 carry, +6% speed", "cost": {"wood": 20, "gold": 10}},
-	{"key": "shrine", "name": "Shrine", "desc": "+1 potion, +1 HP/s regen", "cost": {"crystal": 15, "gold": 10}},
+	{"key": "walls", "name": "Stone Walls", "desc": "+300 castle HP, full repair", "cost": 40},
+	{"key": "towers", "name": "Archer Tower", "desc": "builds a tower that shoots raiders", "cost": 50},
+	{"key": "miners", "name": "Miners", "desc": "+2 peasants who mine gold for you", "cost": 45},
+	{"key": "warcamp", "name": "War Camp", "desc": "+20% strength, +1 soldier per wave", "cost": 70},
+	{"key": "barracks", "name": "Barracks", "desc": "+2 knights escort Merlin", "cost": 60},
+	{"key": "forge", "name": "Forge", "desc": "+15% damage for all", "cost": 60},
+	{"key": "armory", "name": "Armory", "desc": "+25 max HP, +1.5 armour", "cost": 50},
+	{"key": "mage", "name": "Mage Tower", "desc": "-7% cooldowns, castle lightning", "cost": 70},
+	{"key": "shrine", "name": "Shrine", "desc": "+1 potion, +1 HP/s, +10% move", "cost": 40},
 ]
 const MAX_LEVEL := 5
 const DELIVER_R := 9.5
@@ -22,7 +23,7 @@ var game: Game
 var hp := BASE_HP
 var max_hp := BASE_HP
 var levels := {}
-var treasury := {"gold": 20.0, "wood": 25.0, "crystal": 5.0}
+var gold := 60.0
 var tower_nodes: Array[MeshInstance3D] = []
 var tower_t: Array[float] = []
 var zap_t := 2.0
@@ -67,48 +68,39 @@ func level(key: String) -> int:
 	return levels.get(key, 0)
 
 
-func cost_of(key: String) -> Dictionary:
+func cost_of(key: String) -> int:
 	for u in UPGRADES:
 		if u.key == key:
-			var out := {}
-			var mult := pow(1.6, level(key))
-			for r in u.cost:
-				out[r] = int(round(u.cost[r] * mult))
-			return out
-	return {}
+			return int(round(u.cost * pow(1.55, level(key))))
+	return 0
 
 
 func can_afford(key: String) -> bool:
-	if level(key) >= MAX_LEVEL:
-		return false
-	var c := cost_of(key)
-	for r in c:
-		if treasury[r] < c[r]:
-			return false
-	return true
+	return level(key) < MAX_LEVEL and gold >= cost_of(key)
 
 
 func buy(key: String) -> bool:
 	if not can_afford(key):
 		return false
-	var c := cost_of(key)
-	for r in c:
-		treasury[r] -= c[r]
+	gold -= cost_of(key)
 	levels[key] = level(key) + 1
 	var lv := level(key)
 	match key:
 		"walls":
-			max_hp = BASE_HP + 250.0 * lv
+			max_hp = BASE_HP + 300.0 * lv
 			hp = max_hp
 		"towers":
 			tower_nodes[lv - 1].visible = true
 			game.fx.burst(tower_nodes[lv - 1].global_position + Vector3(0, 2, 0), Color(0.9, 0.8, 0.5), 16, 5.0, 0.2)
 		"barracks":
 			for k in 2:
-				var a := game.horde.add_ally(position + Vector3(randf_range(-3, 3), 0, 7.5), ally_power())
+				var a := game.horde.add_ally(position + Vector3(randf_range(-3, 3), 0, -7.5), ally_power())
 				a.pos = game.maze.collide(a.pos, a.r)
 			for a in game.horde.allies:
 				a.max_hp = Horde.KINDS["knight"].hp * ally_power()
+		"miners":
+			for k in 2:
+				game.horde.add_worker(position + Vector3(randf_range(-3, 3), 0, -7.5))
 		"mage":
 			mage_orb.visible = true
 	game.hero.recompute()
@@ -128,6 +120,11 @@ func ally_armor() -> float:
 	return minf(0.5, 0.06 * level("armory"))
 
 
+## Strength multiplier for Camelot's marching counter-waves.
+func army_power() -> float:
+	return (1.0 + 0.2 * level("warcamp")) * (1.0 + 0.1 * level("forge")) * game.hero.relic_army
+
+
 func take_damage(amount: float) -> void:
 	if game.state != "play":
 		return
@@ -139,26 +136,25 @@ func take_damage(amount: float) -> void:
 		game.on_castle_destroyed()
 
 
+func add_gold(v: float, at: Vector3, show := true) -> void:
+	gold += v
+	game.stats_delivered += v
+	if show:
+		game.fx.number(at + Vector3(0, 2.2, 0), "+%d gold" % int(v), Color(1, 0.85, 0.3))
+
+
 func deliver(hero: Hero) -> void:
-	var any := false
-	for r in hero.carry:
-		var v: float = hero.carry[r]
-		if v >= 1.0:
-			treasury[r] += floor(v)
-			hero.carry[r] = v - floor(v)
-			var col: Color = {"wood": Color(0.85, 0.7, 0.35), "gold": Color(1, 0.85, 0.3), "crystal": Color(0.75, 0.55, 1)}[r]
-			game.fx.number(hero.position + Vector3(0, 2.2, 0), "+%d %s" % [int(v), r], col)
-			game.stats_delivered += v
-			any = true
-	if any:
+	if hero.carry >= 1.0:
+		var v := floorf(hero.carry)
+		hero.carry -= v
+		add_gold(v, hero.position)
 		game.fx.ring(hero.position, 0.5, 2.5, Color(1.0, 0.85, 0.4), 0.45)
 		game.sfx.play("deliver", 0.0, 0.3, 0.0)
 
 
 func update(dt: float) -> void:
 	hit_flash = maxf(0.0, hit_flash - dt)
-	# Slow self-repair.
-	hp = minf(max_hp, hp + dt * (1.0 + level("walls") * 1.0))
+	hp = minf(max_hp, hp + dt * (1.5 + level("walls") * 1.0))
 	var t_lv := level("towers")
 	var dmg_mult := game.hero.dmg_mult
 	for i in t_lv:
@@ -184,7 +180,6 @@ func update(dt: float) -> void:
 				game.fx.lightning(src, foe2.pos + Vector3(0, 0.8, 0), Color(0.55, 0.7, 1.0))
 				game.sfx.play("zap", -6.0, 0.15)
 				game.horde.hurt(foe2, (30.0 + 15.0 * m) * dmg_mult, Vector3.ZERO, 0.0, Color(0.7, 0.8, 1.0))
-				# small chain
 				var nxt := game.horde.nearest_enemy(foe2.pos, 5.0)
 				if nxt != null and nxt != foe2:
 					game.fx.lightning(foe2.pos + Vector3(0, 0.8, 0), nxt.pos + Vector3(0, 0.8, 0), Color(0.55, 0.7, 1.0))

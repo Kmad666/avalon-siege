@@ -473,3 +473,170 @@ static func slash_mesh() -> ArrayMesh:
 			var w1 := 0.15 + 0.25 * sin(PI * float(i + 1) / n)
 			g.quad(d1 * (1.0 - w1), d0 * (1.0 - w0), d0, d1, Color.WHITE)
 		return g.mesh())
+
+
+# ------------------------------------------------------------- Merlin
+
+static func wizard_body() -> ArrayMesh:
+	return _cached("wizard_body", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.5, 8, SHADOW)
+		var robe := Color(0.47, 0.32, 0.19)
+		var robe_d := Color(0.36, 0.24, 0.14)
+		var hat := Color(0.42, 0.28, 0.16)
+		# boots peeking out
+		g.box(Vector3(-0.12, 0.06, 0.08), Vector3(0.14, 0.12, 0.22), Color(0.22, 0.16, 0.12))
+		g.box(Vector3(0.12, 0.06, 0.08), Vector3(0.14, 0.12, 0.22), Color(0.22, 0.16, 0.12))
+		# long robe (flared cone) + upper body
+		g.prism(Vector3(0, 0.05, 0), 0.4, 0.24, 0.75, 8, robe, Color(0, 0, 0, 0), 0.2)
+		g.prism(Vector3(0, 0.8, 0), 0.24, 0.2, 0.32, 8, robe.lightened(0.05), Color(0, 0, 0, 0), 0.2)
+		g.box(Vector3(0, 0.62, 0), Vector3(0.5, 0.07, 0.42), Color(0.75, 0.6, 0.25))     # belt
+		g.box(Vector3(0, 0.6, 0.22), Vector3(0.1, 0.1, 0.03), Color(0.95, 0.82, 0.35))   # buckle
+		# sleeves
+		g.box(Vector3(-0.3, 0.88, 0.05), Vector3(0.16, 0.16, 0.36), robe_d)
+		g.box(Vector3(0.3, 0.88, 0.05), Vector3(0.16, 0.16, 0.36), robe_d)
+		g.box(Vector3(-0.3, 0.86, 0.25), Vector3(0.1, 0.1, 0.06), Color(0.92, 0.75, 0.6))
+		# head + long white beard
+		g.box(Vector3(0, 1.22, 0.02), Vector3(0.26, 0.26, 0.26), Color(0.92, 0.75, 0.6))
+		g.box(Vector3(-0.06, 1.25, 0.15), Vector3(0.05, 0.04, 0.02), Color(0.15, 0.2, 0.35))
+		g.box(Vector3(0.06, 1.25, 0.15), Vector3(0.05, 0.04, 0.02), Color(0.15, 0.2, 0.35))
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), PI - 0.25), Vector3(0, 1.17, 0.16)))
+		g.prism(Vector3.ZERO, 0.19, 0.0, 0.6, 6, Color(0.95, 0.95, 0.92))
+		g.pop()
+		g.box(Vector3(0, 1.15, 0.15), Vector3(0.24, 0.07, 0.04), Color(0.95, 0.95, 0.92))  # moustache
+		# wide-brim pointed hat, tip bent back
+		var hb := Vector3(0, 1.36, 0.02)
+		g.prism(hb, 0.4, 0.38, 0.05, 10, hat, hat.darkened(0.05))
+		g.prism(hb + Vector3(0, 0.05, 0), 0.24, 0.13, 0.3, 8, hat.lightened(0.04))
+		g.prism(hb + Vector3(0, 0.05, 0), 0.25, 0.235, 0.07, 8, Color(0.28, 0.18, 0.1))  # hat band
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.45), hb + Vector3(0, 0.33, 0)))
+		g.prism(Vector3.ZERO, 0.13, 0.0, 0.32, 8, hat)
+		g.pop()
+		return g.mesh())
+
+
+static func wizard_staff() -> ArrayMesh:
+	return _cached("wizard_staff", func():
+		var g := Geo.new()
+		g.prism(Vector3(0, -0.75, 0), 0.04, 0.035, 1.55, 5, Color(0.42, 0.28, 0.16))
+		g.prism(Vector3(0, 0.75, 0), 0.07, 0.03, 0.12, 5, Color(0.3, 0.2, 0.12))
+		return g.mesh())
+
+
+static func staff_gem() -> ArrayMesh:
+	return _cached("staff_gem", func():
+		var g := Geo.new()
+		g.shard(Vector3(0, 0, 0), 0.09, 0.26, Color(0.55, 0.8, 1.0))
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), PI), Vector3(0, 0.02, 0)))
+		g.shard(Vector3.ZERO, 0.09, 0.12, Color(0.4, 0.6, 1.0))
+		g.pop()
+		return g.mesh())
+
+
+# ------------------------------------------------------------- Camelot's army
+
+static func _soldier_base(g: Geo, tabard: Color, steel: Color) -> void:
+	g.box(Vector3(-0.11, 0.22, 0), Vector3(0.14, 0.44, 0.18), Color(0.28, 0.24, 0.22))
+	g.box(Vector3(0.11, 0.22, 0), Vector3(0.14, 0.44, 0.18), Color(0.28, 0.24, 0.22))
+	g.prism(Vector3(0, 0.4, 0), 0.28, 0.24, 0.5, 6, tabard, Color(0, 0, 0, 0), 0.52)
+	g.box(Vector3(0, 0.8, 0), Vector3(0.42, 0.26, 0.28), steel)
+	g.prism(Vector3(0, 0.95, 0), 0.17, 0.15, 0.3, 6, steel)
+
+
+static func swordsman_mesh() -> ArrayMesh:
+	return _cached("swordsman", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.5, 8, SHADOW)
+		g.push_at(Vector3.ZERO, 0.0, Vector3(1.15, 1.15, 1.15))
+		_soldier_base(g, Color(0.2, 0.36, 0.8), Color(0.7, 0.72, 0.78))
+		g.box(Vector3(0, 1.08, 0.12), Vector3(0.18, 0.04, 0.05), Color(0.1, 0.1, 0.12))
+		g.prism(Vector3(0, 1.25, -0.02), 0.04, 0.02, 0.22, 4, Color(0.95, 0.8, 0.3))
+		g.box(Vector3(0.3, 0.7, 0.35), Vector3(0.06, 0.04, 0.75), Color(0.88, 0.9, 0.95))
+		g.box(Vector3(0.3, 0.7, 0.0), Vector3(0.22, 0.05, 0.05), Color(0.95, 0.8, 0.3))
+		g.box(Vector3(-0.3, 0.68, 0.06), Vector3(0.07, 0.48, 0.38), Color(0.2, 0.36, 0.8), Color(0.95, 0.8, 0.3))
+		g.pop()
+		return g.mesh())
+
+
+static func archer_mesh() -> ArrayMesh:
+	return _cached("archer_ally", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.42, 8, SHADOW)
+		_soldier_base(g, Color(0.25, 0.5, 0.25), Color(0.5, 0.38, 0.25))
+		g.prism(Vector3(0, 1.0, 0), 0.2, 0.0, 0.3, 6, Color(0.25, 0.5, 0.25))  # hood
+		g.box(Vector3(-0.25, 0.8, 0.2), Vector3(0.04, 0.8, 0.05), Color(0.55, 0.38, 0.22))
+		g.box(Vector3(-0.25, 1.22, 0.14), Vector3(0.04, 0.1, 0.12), Color(0.55, 0.38, 0.22))
+		g.box(Vector3(-0.25, 0.38, 0.14), Vector3(0.04, 0.1, 0.12), Color(0.55, 0.38, 0.22))
+		g.box(Vector3(0.12, 0.85, -0.2), Vector3(0.14, 0.4, 0.12), Color(0.45, 0.3, 0.2))  # quiver
+		return g.mesh())
+
+
+static func paladin_mesh() -> ArrayMesh:
+	return _cached("paladin", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.9, 9, SHADOW)
+		g.push_at(Vector3.ZERO, 0.0, Vector3(1.9, 1.9, 1.9))
+		_soldier_base(g, Color(0.92, 0.9, 0.85), Color(0.85, 0.85, 0.9))
+		g.box(Vector3(0, 0.6, 0.15), Vector3(0.1, 0.3, 0.02), Color(0.95, 0.75, 0.2))
+		g.box(Vector3(0, 0.66, 0.15), Vector3(0.24, 0.07, 0.02), Color(0.95, 0.75, 0.2))
+		g.box(Vector3(0, 1.08, 0.12), Vector3(0.18, 0.04, 0.05), Color(0.1, 0.1, 0.12))
+		g.box(Vector3(0.32, 0.8, 0.3), Vector3(0.05, 0.05, 0.75), Color(0.45, 0.32, 0.2))
+		g.box(Vector3(0.32, 0.8, 0.68), Vector3(0.22, 0.2, 0.2), Color(0.8, 0.8, 0.85))  # warhammer
+		g.pop()
+		return g.mesh())
+
+
+static func champion_mesh() -> ArrayMesh:
+	return _cached("champion", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.7, 8, SHADOW)
+		g.push_at(Vector3.ZERO, 0.0, Vector3(1.5, 1.5, 1.5))
+		var gold := Color(0.95, 0.78, 0.3)
+		_soldier_base(g, Color(0.2, 0.36, 0.85), gold)
+		g.quad(Vector3(-0.2, 0.92, -0.15), Vector3(0.2, 0.92, -0.15), Vector3(0.26, 0.2, -0.32), Vector3(-0.26, 0.2, -0.32), Color(0.2, 0.36, 0.85))
+		g.quad(Vector3(-0.26, 0.2, -0.31), Vector3(0.26, 0.2, -0.31), Vector3(0.2, 0.92, -0.14), Vector3(-0.2, 0.92, -0.14), Color(0.15, 0.25, 0.6))
+		g.prism(Vector3(0, 1.25, 0), 0.06, 0.0, 0.25, 4, Color(0.9, 0.2, 0.2))
+		g.box(Vector3(0.3, 0.8, 0.45), Vector3(0.08, 0.04, 1.0), Color(0.95, 0.95, 1.0))
+		g.pop()
+		return g.mesh())
+
+
+static func worker_mesh() -> ArrayMesh:
+	return _cached("worker", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.38, 7, SHADOW)
+		g.box(Vector3(-0.09, 0.18, 0), Vector3(0.12, 0.36, 0.15), Color(0.35, 0.3, 0.25))
+		g.box(Vector3(0.09, 0.18, 0), Vector3(0.12, 0.36, 0.15), Color(0.35, 0.3, 0.25))
+		g.prism(Vector3(0, 0.34, 0), 0.22, 0.2, 0.4, 6, Color(0.62, 0.5, 0.32))
+		g.box(Vector3(0, 0.88, 0.02), Vector3(0.22, 0.22, 0.22), Color(0.92, 0.75, 0.6))
+		g.prism(Vector3(0, 0.98, 0.02), 0.2, 0.1, 0.1, 6, Color(0.75, 0.6, 0.3))   # straw hat
+		g.box(Vector3(0, 0.6, -0.2), Vector3(0.3, 0.32, 0.18), Color(0.7, 0.62, 0.45))  # sack
+		g.box(Vector3(0.24, 0.55, 0.2), Vector3(0.04, 0.04, 0.6), Color(0.45, 0.32, 0.2))  # pickaxe
+		g.box(Vector3(0.24, 0.55, 0.48), Vector3(0.04, 0.35, 0.06), Color(0.6, 0.6, 0.65))
+		return g.mesh())
+
+
+static func spellbook_mesh() -> ArrayMesh:
+	return _cached("spellbook", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.75, 8, SHADOW)
+		g.prism(Vector3.ZERO, 0.55, 0.5, 0.18, 6, Color(0.55, 0.53, 0.5), Color(0.62, 0.6, 0.56))
+		g.prism(Vector3(0, 0.18, 0), 0.18, 0.15, 0.6, 6, Color(0.6, 0.58, 0.54))
+		g.box(Vector3(0, 0.82, 0), Vector3(0.5, 0.06, 0.4), Color(0.6, 0.58, 0.54))
+		# open book, tilted toward the viewer
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.35), Vector3(0, 0.92, 0)))
+		g.box(Vector3(-0.15, 0, 0), Vector3(0.28, 0.04, 0.36), Color(0.45, 0.12, 0.15))
+		g.box(Vector3(0.15, 0, 0), Vector3(0.28, 0.04, 0.36), Color(0.45, 0.12, 0.15))
+		g.box(Vector3(-0.14, 0.03, 0), Vector3(0.25, 0.03, 0.32), Color(0.95, 0.92, 0.82))
+		g.box(Vector3(0.14, 0.03, 0), Vector3(0.25, 0.03, 0.32), Color(0.95, 0.92, 0.82))
+		g.pop()
+		return g.mesh())
+
+
+static func rune_mesh() -> ArrayMesh:
+	return _cached("rune", func():
+		var g := Geo.new()
+		g.box(Vector3.ZERO, Vector3(0.36, 0.06, 0.36), Color.WHITE)
+		g.box(Vector3.ZERO, Vector3(0.12, 0.08, 0.52), Color(0.8, 0.8, 0.8))
+		g.box(Vector3.ZERO, Vector3(0.52, 0.08, 0.12), Color(0.8, 0.8, 0.8))
+		return g.mesh())

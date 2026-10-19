@@ -1,25 +1,40 @@
 class_name Horde
 extends Node3D
-## Every enemy and allied knight. Units are plain data; each kind is drawn with
-## a single MultiMesh whose buffer is rebuilt once per frame.
+## Every unit on the field: the Dread Army (team 1), and Camelot's side (team 0):
+## Merlin's knight escort, the marching counter-waves, and the gold miners.
+## Units are plain data; each kind is drawn with a single MultiMesh.
 
 const KINDS := {
-	"goblin": {"hp": 20.0, "spd": 4.1, "dmg": 5.0, "r": 0.36, "xp": 1, "gold": 0.35, "cd": 0.9, "reach": 0.45},
-	"orc": {"hp": 58.0, "spd": 3.2, "dmg": 11.0, "r": 0.5, "xp": 3, "gold": 0.5, "cd": 1.1, "reach": 0.5},
-	"skeleton": {"hp": 30.0, "spd": 3.0, "dmg": 8.0, "r": 0.4, "xp": 2, "gold": 0.35, "cd": 1.8, "reach": 0.4, "ranged": 10.0},
+	# Dread Army
+	"goblin": {"hp": 20.0, "spd": 4.1, "dmg": 5.0, "r": 0.36, "xp": 1, "gold": 0.6, "cd": 0.9, "reach": 0.45},
+	"orc": {"hp": 58.0, "spd": 3.2, "dmg": 11.0, "r": 0.5, "xp": 3, "gold": 0.7, "cd": 1.1, "reach": 0.5},
+	"skeleton": {"hp": 30.0, "spd": 3.0, "dmg": 8.0, "r": 0.4, "xp": 2, "gold": 0.6, "cd": 1.8, "reach": 0.4, "ranged": 10.0},
 	"ogre": {"hp": 260.0, "spd": 2.5, "dmg": 24.0, "r": 0.85, "xp": 12, "gold": 1.0, "cd": 1.6, "reach": 0.7},
 	"dark_knight": {"hp": 750.0, "spd": 3.4, "dmg": 30.0, "r": 0.62, "xp": 30, "gold": 1.0, "cd": 1.2, "reach": 0.7},
-	"knight": {"hp": 90.0, "spd": 5.6, "dmg": 11.0, "r": 0.42, "xp": 0, "gold": 0.0, "cd": 0.8, "reach": 0.55},
+	# Camelot
+	"knight": {"hp": 90.0, "spd": 5.6, "dmg": 11.0, "r": 0.42, "cd": 0.8, "reach": 0.55},
+	"footman": {"hp": 22.0, "spd": 4.0, "dmg": 5.5, "r": 0.38, "cd": 0.9, "reach": 0.5},
+	"swordsman": {"hp": 60.0, "spd": 3.2, "dmg": 11.0, "r": 0.5, "cd": 1.1, "reach": 0.5},
+	"archer": {"hp": 30.0, "spd": 3.0, "dmg": 8.0, "r": 0.4, "cd": 1.8, "reach": 0.4, "ranged": 10.0},
+	"paladin": {"hp": 260.0, "spd": 2.5, "dmg": 24.0, "r": 0.8, "cd": 1.6, "reach": 0.7},
+	"champion": {"hp": 750.0, "spd": 3.4, "dmg": 30.0, "r": 0.62, "cd": 1.2, "reach": 0.7},
+	"worker": {"hp": 40.0, "spd": 4.6, "dmg": 0.0, "r": 0.34, "cd": 1.0, "reach": 0.4},
 }
+## Camelot's answer to each kind of Dread soldier.
+const MIRROR := {"goblin": "footman", "orc": "swordsman", "skeleton": "archer", "ogre": "paladin", "dark_knight": "champion"}
 const MAX_ENEMIES := 260
+const MAX_SOLDIERS := 160
 
 var game: Game
 var maze: Maze
 var enemies: Array[Unit] = []
-var allies: Array[Unit] = []
+var allies: Array[Unit] = []      # Merlin's knight escort
+var soldiers: Array[Unit] = []    # marching counter-waves
+var workers: Array[Unit] = []     # gold miners
 var dying: Array[Unit] = []
 var mms := {}                     # kind -> MultiMesh
 var bucket := {}                  # tile index -> Array[Unit] (enemies)
+var fbucket := {}                 # tile index -> Array[Unit] (friendly)
 var _buffers := {}
 var camp_fields := {}             # camp id -> PackedInt32Array next
 var _frame := 0
@@ -29,20 +44,22 @@ func setup(g: Game) -> void:
 	game = g
 	maze = g.maze
 	var meshes := {
-		"goblin": Models.goblin_mesh(), "orc": Models.orc_mesh(), "skeleton": Models.skeleton_mesh(),
-		"ogre": Models.ogre_mesh(), "dark_knight": Models.dark_knight_mesh(), "knight": Models.ally_mesh(),
+		"goblin": [Models.goblin_mesh(), 300], "orc": [Models.orc_mesh(), 300], "skeleton": [Models.skeleton_mesh(), 300],
+		"ogre": [Models.ogre_mesh(), 60], "dark_knight": [Models.dark_knight_mesh(), 20],
+		"knight": [Models.ally_mesh(), 24], "footman": [Models.ally_mesh(), 160], "swordsman": [Models.swordsman_mesh(), 160],
+		"archer": [Models.archer_mesh(), 160], "paladin": [Models.paladin_mesh(), 40], "champion": [Models.champion_mesh(), 12],
+		"worker": [Models.worker_mesh(), 16],
 	}
 	for k in meshes:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
-		mm.mesh = meshes[k]
-		mm.instance_count = 300 if k != "knight" else 24
+		mm.mesh = meshes[k][0]
+		mm.instance_count = meshes[k][1]
 		mm.visible_instance_count = 0
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		Geo.apply(mmi)
-		# The horde moves everywhere; skip per-instance culling bookkeeping.
 		mmi.custom_aabb = AABB(Vector3(-20, -5, -20), Vector3(Maze.G * Maze.T + 40, 30, Maze.G * Maze.T + 40))
 		add_child(mmi)
 		mms[k] = mm
@@ -60,13 +77,14 @@ func make(kind: String, p: Vector3, team := 1, power := 1.0) -> Unit:
 	u.speed = d.spd * randf_range(0.92, 1.08)
 	u.dmg = d.dmg * (1.0 + (power - 1.0) * 0.5)
 	u.r = d.r
-	u.xp = d.xp
-	u.gold_chance = d.gold
+	u.xp = d.get("xp", 0)
+	u.gold_chance = d.get("gold", 0.0)
 	u.atk_cd = d.cd
 	u.reach = d.reach
 	u.ranged = d.get("ranged", 0.0)
 	u.facing = randf() * TAU
 	u.anim = randf() * 10.0
+	u.think = randf() * 0.15
 	if kind == "dark_knight":
 		u.boss = true
 	return u
@@ -85,7 +103,17 @@ func spawn(kind: String, p: Vector3, mode: String, power := 1.0, elite := false)
 		u.xp *= 3
 		u.gold_chance = 1.0
 		u.scale = 1.25
+		u.tint = Color(1.0, 0.8, 0.62)
 	enemies.append(u)
+	return u
+
+
+func spawn_soldier(kind: String, p: Vector3, power: float) -> Unit:
+	if soldiers.size() >= MAX_SOLDIERS:
+		return null
+	var u := make(kind, p, 0, power)
+	u.mode = "march"
+	soldiers.append(u)
 	return u
 
 
@@ -94,6 +122,13 @@ func add_ally(p: Vector3, power: float) -> Unit:
 	u.slot = allies.size()
 	u.mode = "follow"
 	allies.append(u)
+	return u
+
+
+func add_worker(p: Vector3) -> Unit:
+	var u := make("worker", maze.collide(p, 0.34), 0, 1.0)
+	u.mode = "w_go"
+	workers.append(u)
 	return u
 
 
@@ -108,19 +143,29 @@ func _rebuild_buckets() -> void:
 			(bucket[u.tile] as Array).append(u)
 		else:
 			bucket[u.tile] = [u]
+	fbucket.clear()
+	for list: Array[Unit] in [allies, soldiers, workers]:
+		for u in list:
+			if not u.alive:
+				continue
+			var t2 := Maze.tile_of(u.pos)
+			u.tile = Maze.idx(t2)
+			if fbucket.has(u.tile):
+				(fbucket[u.tile] as Array).append(u)
+			else:
+				fbucket[u.tile] = [u]
 
 
-func enemies_near(p: Vector3, radius: float) -> Array:
+func _near(b: Dictionary, p: Vector3, radius: float) -> Array:
 	var out := []
 	var t0 := Maze.tile_of(p - Vector3(radius, 0, radius))
 	var t1 := Maze.tile_of(p + Vector3(radius, 0, radius))
-	var r2 := radius * radius
 	for y in range(t0.y, t1.y + 1):
 		for x in range(t0.x, t1.x + 1):
-			var b = bucket.get(y * Maze.G + x)
-			if b == null:
+			var l = b.get(y * Maze.G + x)
+			if l == null:
 				continue
-			for u: Unit in b:
+			for u: Unit in l:
 				if u.alive:
 					var dx := u.pos.x - p.x
 					var dz := u.pos.z - p.z
@@ -130,15 +175,31 @@ func enemies_near(p: Vector3, radius: float) -> Array:
 	return out
 
 
-func nearest_enemy(p: Vector3, radius: float, need_los := false) -> Unit:
+func enemies_near(p: Vector3, radius: float) -> Array:
+	return _near(bucket, p, radius)
+
+
+func friends_near(p: Vector3, radius: float) -> Array:
+	return _near(fbucket, p, radius)
+
+
+func _nearest_in(list: Array, p: Vector3) -> Unit:
 	var best: Unit = null
 	var bd := INF
-	for u: Unit in enemies_near(p, radius):
+	for u: Unit in list:
 		var d := (u.pos - p).length_squared()
-		if d < bd and (not need_los or maze.line_clear(p, u.pos)):
+		if d < bd:
 			bd = d
 			best = u
 	return best
+
+
+func nearest_enemy(p: Vector3, radius: float) -> Unit:
+	return _nearest_in(enemies_near(p, radius), p)
+
+
+func nearest_friend(p: Vector3, radius: float) -> Unit:
+	return _nearest_in(friends_near(p, radius), p)
 
 
 # ------------------------------------------------------------- damage
@@ -149,13 +210,34 @@ func hurt(u: Unit, amount: float, from_dir := Vector3.ZERO, knock := 0.0, color 
 	u.hp -= amount
 	u.flash = 0.18
 	u.aggro = true
-	if knock > 0.0 and not u.boss:
+	if knock > 0.0 and not u.boss and u.mini < 0:
 		var kb := knock / (1.0 + u.r * 2.0)
 		u.vel += from_dir * kb
 	game.fx.number(u.pos + Vector3(0, 1.4 * u.scale, 0), str(int(round(amount))), color)
 	game.sfx.play("hit", -6.0, 0.045)
 	if u.hp <= 0.0:
 		_kill(u)
+
+
+## Damage dealt to anything on Camelot's side.
+func hurt_friend(a: Unit, amount: float) -> void:
+	if a == null or not a.alive:
+		return
+	a.hp -= amount * (1.0 - game.castle.ally_armor())
+	a.flash = 0.18
+	if a.hp <= 0.0:
+		a.alive = false
+		a.dying = 0.4
+		dying.append(a)
+		if a.mode == "follow":
+			a.respawn_t = 18.0
+		elif a.kind == "worker":
+			a.respawn_t = 20.0
+			if a.job != null:
+				a.job.workers -= 1
+				a.job = null
+			a.cargo = 0.0
+		game.fx.burst(a.pos + Vector3(0, 0.5, 0), Color(0.75, 0.78, 0.85), 8, 4.0, 0.16)
 
 
 func _kill(u: Unit) -> void:
@@ -171,7 +253,6 @@ func _kill(u: Unit) -> void:
 		"skeleton": col = Color(0.92, 0.9, 0.8)
 		"ogre": col = Color(0.7, 0.55, 0.45)
 		"dark_knight": col = Color(0.85, 0.15, 0.12)
-		"knight": col = Color(0.75, 0.78, 0.85)
 	game.fx.burst(u.pos + Vector3(0, 0.5, 0), col, 6 + int(u.r * 8), 4.0, 0.16)
 
 
@@ -179,11 +260,19 @@ func _kill(u: Unit) -> void:
 
 func update(dt: float) -> void:
 	_rebuild_buckets()
+	_frame += 1
+	_update_enemies(dt)
+	_update_soldiers(dt)
+	_update_allies(dt)
+	_update_workers(dt)
+	_update_dying(dt)
+
+
+func _update_enemies(dt: float) -> void:
 	var hero: Hero = game.hero
 	var hero_ok := hero.alive
 	var hp := hero.position
 	var castle_p := maze.castle_pos
-	_frame += 1
 	var ui := 0
 	for u in enemies:
 		ui += 1
@@ -194,7 +283,6 @@ func update(dt: float) -> void:
 		u.lunge = maxf(0.0, u.lunge - dt * 4.0)
 		u.think -= dt
 		if u.think <= 0.0:
-			# Expensive decisions (targets, paths, line of sight) ~8x per second, staggered.
 			u.think = 0.11 + randf() * 0.05
 			_decide(u, hero_ok, hp, castle_p)
 		var desire := Vector3.ZERO
@@ -230,7 +318,6 @@ func update(dt: float) -> void:
 					if u.t_kind == "castle":
 						aim = target_pos + Vector3(randf_range(-2, 2), 2.0, randf_range(-2, 2))
 					game.fx.shoot("earrow", u.pos + Vector3(0, 1.0, 0), aim, 13.0, u.dmg, 1)
-				# Archers keep a little distance.
 				if dist < u.ranged * 0.45 and u.t_kind != "castle":
 					desire = -to_t / maxf(dist, 0.01)
 			elif in_melee:
@@ -239,7 +326,7 @@ func update(dt: float) -> void:
 					u.lunge = 1.0
 					match u.t_kind:
 						"hero": hero.take_damage(u.dmg, u.pos)
-						"ally": _hurt_ally(u.t_ally, u.dmg)
+						"ally": hurt_friend(u.t_ally, u.dmg)
 						"castle": game.castle.take_damage(u.dmg)
 			elif u.los and u.t_kind != "castle":
 				desire = to_t / maxf(dist, 0.01)
@@ -248,24 +335,22 @@ func update(dt: float) -> void:
 		else:
 			desire = u.path_dir
 			if u.mode == "camp" and desire == Vector3.ZERO:
-				# idle shuffle around camp
 				u.anim += dt * 0.2
 				desire = Vector3(sin(u.anim * 0.7 + u.home.x), 0, cos(u.anim * 0.5 + u.home.z)) * 0.15
 			if desire.length_squared() > 0.01:
 				u.facing = lerp_angle(u.facing, atan2(desire.x, desire.z), minf(1.0, dt * 8.0))
-		# Separation from neighbours in the same + adjacent tiles.
 		if (ui + _frame) % 2 == 0:
-			u.sep = _separation(u)
-		var want := (desire * u.speed + u.sep * 3.0)
-		u.vel = u.vel.lerp(want, minf(1.0, dt * 7.0))
-		var np := u.pos + u.vel * dt
-		np = maze.collide(np, u.r)
-		var moved := (np - u.pos).length()
-		if moved > 0.002:
-			u.anim += moved * 2.4
-		u.pos = np
-	_update_allies(dt)
-	_update_dying(dt)
+			u.sep = _separation(u, bucket)
+		_step(u, desire * u.speed + u.sep * 3.0, dt, 7.0)
+
+
+func _step(u: Unit, want: Vector3, dt: float, accel: float) -> void:
+	u.vel = u.vel.lerp(want, minf(1.0, dt * accel))
+	var np := maze.collide(u.pos + u.vel * dt, u.r)
+	var moved := (np - u.pos).length()
+	if moved > 0.002:
+		u.anim += moved * 2.4
+	u.pos = np
 
 
 func _decide(u: Unit, hero_ok: bool, hp: Vector3, castle_p: Vector3) -> void:
@@ -279,21 +364,26 @@ func _decide(u: Unit, hero_ok: bool, hp: Vector3, castle_p: Vector3) -> void:
 	var aggro_r := 9.0 if u.mode == "camp" else 7.5
 	if u.aggro:
 		aggro_r = 14.0
-	var target_pos := Vector3.ZERO
+	if u.mini >= 0:
+		aggro_r = 11.0
 	if dh < aggro_r and game.hero_dist(u.pos) < 230:
 		u.t_kind = "hero"
-		target_pos = hp
 	else:
 		u.aggro = false
-		for a in allies:
-			if a.alive and (a.pos - u.pos).length_squared() < 30.0:
-				u.t_kind = "ally"
-				u.t_ally = a
-				target_pos = a.pos
-				break
-		if u.t_kind == "" and u.mode == "march" and (castle_p - u.pos).length() < 9.0:
+		var f: Unit = null
+		if u.mode == "march" or u.camp_id == -2:
+			f = nearest_friend(u.pos, 6.0)
+		else:
+			# Lair monsters ignore passing soldiers and miners; they only fight Merlin's escort.
+			for c: Unit in friends_near(u.pos, 7.5):
+				if c.mode == "follow" and (c.pos - u.home).length() < 16.0:
+					f = c
+					break
+		if f != null:
+			u.t_kind = "ally"
+			u.t_ally = f
+		elif u.mode == "march" and (castle_p - u.pos).length() < 9.0:
 			u.t_kind = "castle"
-			target_pos = castle_p
 	match u.t_kind:
 		"hero":
 			var d := Vector2(hp.x - u.pos.x, hp.z - u.pos.z).length()
@@ -303,7 +393,9 @@ func _decide(u: Unit, hero_ok: bool, hp: Vector3, castle_p: Vector3) -> void:
 				if u.path_dir == Vector3.ZERO:
 					u.path_dir = Vector3(hp.x - u.pos.x, 0, hp.z - u.pos.z).normalized()
 		"ally":
-			u.los = true
+			u.los = maze.line_clear(u.pos, u.t_ally.pos)
+			if not u.los:
+				u.path_dir = _march_dir(u.pos) if u.mode == "march" else Vector3(u.t_ally.pos.x - u.pos.x, 0, u.t_ally.pos.z - u.pos.z).normalized()
 		"castle":
 			u.los = u.ranged > 0.0 and (castle_p - u.pos).length() < 13.0
 			u.path_dir = _march_dir(u.pos)
@@ -313,9 +405,9 @@ func _decide(u: Unit, hero_ok: bool, hp: Vector3, castle_p: Vector3) -> void:
 			elif u.mode == "camp":
 				var hd := Vector3(u.home.x - u.pos.x, 0, u.home.z - u.pos.z)
 				if hd.length() > 2.5:
-					var f = camp_fields.get(u.camp_id)
-					if f != null and not maze.line_clear(u.pos, u.home):
-						u.path_dir = maze.flow_dir(u.pos, f)
+					var fld = camp_fields.get(u.camp_id)
+					if fld != null and not maze.line_clear(u.pos, u.home):
+						u.path_dir = maze.flow_dir(u.pos, fld)
 					else:
 						u.path_dir = hd.normalized()
 
@@ -330,26 +422,33 @@ func _march_dir(p: Vector3) -> Vector3:
 	return d
 
 
-func _separation(u: Unit) -> Vector3:
+func _assault_dir(p: Vector3) -> Vector3:
+	var d := maze.flow_dir(p, maze.to_citadel_next)
+	if d == Vector3.ZERO:
+		var to := maze.citadel_pos - p
+		to.y = 0
+		return to.normalized()
+	return d
+
+
+func _separation(u: Unit, b: Dictionary) -> Vector3:
 	var s := Vector3.ZERO
 	var t := u.tile
 	var x := t % Maze.G
 	var y := t / Maze.G
-	var count := 0
 	var seen := 0
 	var ux := u.pos.x
 	var uz := u.pos.z
-	# Only look at neighbouring tiles on the side of the tile the unit is in.
 	var fx := ux / Maze.T - x
 	var fz := uz / Maze.T - y
 	var x0 := -1 if fx < 0.5 else 0
 	var y0 := -1 if fz < 0.5 else 0
 	for dy in range(y0, y0 + 2):
 		for dx in range(x0, x0 + 2):
-			var b = bucket.get((y + dy) * Maze.G + x + dx)
-			if b == null:
+			var l = b.get((y + dy) * Maze.G + x + dx)
+			if l == null:
 				continue
-			for o: Unit in b:
+			for o: Unit in l:
 				seen += 1
 				if seen > 14:
 					return s
@@ -364,24 +463,102 @@ func _separation(u: Unit) -> Vector3:
 					var push := (rr - d) / rr
 					s.x += ddx / d * push
 					s.z += ddz / d * push
-					count += 1
-					if count > 8:
-						return s
 	return s
 
 
-func _hurt_ally(a: Unit, amount: float) -> void:
-	if a == null or not a.alive:
-		return
-	a.hp -= amount * (1.0 - game.castle.ally_armor())
-	a.flash = 0.18
-	if a.hp <= 0.0:
-		a.alive = false
-		a.respawn_t = 18.0
-		a.dying = 0.4
-		dying.append(a)
-		game.fx.burst(a.pos + Vector3(0, 0.5, 0), Color(0.75, 0.78, 0.85), 8, 4.0, 0.16)
+# ------------------------------------------------------------- Camelot's soldiers
 
+func _update_soldiers(dt: float) -> void:
+	var cit_alive := game.citadel_hp > 0.0
+	var cp := maze.citadel_pos
+	var ui := 0
+	for u in soldiers:
+		ui += 1
+		if not u.alive:
+			continue
+		u.atk_t -= dt
+		u.flash = maxf(0.0, u.flash - dt)
+		u.lunge = maxf(0.0, u.lunge - dt * 4.0)
+		u.think -= dt
+		if u.think <= 0.0:
+			u.think = 0.11 + randf() * 0.05
+			u.t_kind = ""
+			u.t_ally = null
+			u.los = false
+			var foe: Unit = null
+			var bd := INF
+			for e: Unit in enemies_near(u.pos, 8.0):
+				if e.mode == "march" or e.camp_id == -2 or e.t_ally == u:
+					var d := (e.pos - u.pos).length_squared()
+					if d < bd:
+						bd = d
+						foe = e
+			if foe != null:
+				u.t_kind = "enemy"
+				u.t_ally = foe
+				u.los = maze.line_clear(u.pos, foe.pos)
+				u.path_dir = _assault_dir(u.pos) if not u.los else Vector3.ZERO
+			elif cit_alive and (cp - u.pos).length() < 9.5:
+				u.t_kind = "citadel"
+				u.los = true
+			else:
+				u.path_dir = _assault_dir(u.pos)
+		var desire := Vector3.ZERO
+		var tp := Vector3.ZERO
+		var tr := 0.0
+		if u.t_kind == "enemy":
+			if u.t_ally == null or not u.t_ally.alive:
+				u.t_kind = ""
+				u.think = 0.0
+			else:
+				tp = u.t_ally.pos
+				tr = u.t_ally.r
+		elif u.t_kind == "citadel":
+			if not cit_alive:
+				u.t_kind = ""
+			tp = cp
+			tr = 7.4
+		if u.t_kind != "":
+			var to := Vector3(tp.x - u.pos.x, 0, tp.z - u.pos.z)
+			var dist := to.length()
+			if dist > 0.01:
+				u.facing = lerp_angle(u.facing, atan2(to.x, to.z), minf(1.0, dt * 10.0))
+			if u.ranged > 0.0 and u.los and dist < u.ranged:
+				if u.atk_t <= 0.0:
+					u.atk_t = u.atk_cd
+					u.lunge = 1.0
+					if u.t_kind == "citadel":
+						game.damage_citadel(u.dmg * 0.25, false)
+						game.fx.shoot("arrow", u.pos + Vector3(0, 1.0, 0), tp + Vector3(randf_range(-2, 2), 3.0, randf_range(-2, 2)), 24.0, 0.0, 0)
+					else:
+						game.fx.shoot("arrow", u.pos + Vector3(0, 1.0, 0), tp + u.t_ally.vel * 0.3 + Vector3(0, 0.7, 0), 24.0, u.dmg, 0)
+			elif dist < u.r + tr + u.reach:
+				if u.atk_t <= 0.0:
+					u.atk_t = u.atk_cd
+					u.lunge = 1.0
+					if u.t_kind == "citadel":
+						game.damage_citadel(u.dmg * 0.25, false)
+					else:
+						hurt(u.t_ally, u.dmg, to / maxf(dist, 0.01), 1.5, Color(0.7, 0.85, 1.0))
+			elif u.los:
+				desire = to / maxf(dist, 0.01)
+			else:
+				desire = u.path_dir
+		else:
+			desire = u.path_dir
+			if desire.length_squared() > 0.01:
+				u.facing = lerp_angle(u.facing, atan2(desire.x, desire.z), minf(1.0, dt * 8.0))
+		if (ui + _frame) % 2 == 0:
+			u.sep = _separation(u, fbucket)
+		_step(u, desire * u.speed + u.sep * 3.0, dt, 7.0)
+	var j := soldiers.size() - 1
+	while j >= 0:
+		if not soldiers[j].alive and soldiers[j].dying <= 0.0:
+			soldiers.remove_at(j)
+		j -= 1
+
+
+# ------------------------------------------------------------- knight escort
 
 func _update_allies(dt: float) -> void:
 	var hero: Hero = game.hero
@@ -394,8 +571,7 @@ func _update_allies(dt: float) -> void:
 				if a.respawn_t <= 0.0:
 					a.alive = true
 					a.hp = a.max_hp
-					a.pos = maze.castle_pos + Vector3(randf_range(-4, 4), 0, 7.5)
-					a.pos = maze.collide(a.pos, a.r)
+					a.pos = maze.collide(maze.castle_pos + Vector3(randf_range(-4, 4), 0, -7.5), a.r)
 					a.vel = Vector3.ZERO
 			continue
 		a.atk_t -= dt
@@ -420,29 +596,94 @@ func _update_allies(dt: float) -> void:
 			else:
 				desire = to / maxf(d, 0.01)
 		else:
-			# Formation around the hero (or the castle gate when the hero is down).
 			var ang := TAU * float(a.slot) / maxf(1.0, float(n)) + 0.4
 			var ring_r := 1.8 + 0.5 * float(a.slot % 2)
 			var spot := leash_p + Vector3(cos(ang), 0, sin(ang)) * ring_r
 			var to := Vector3(spot.x - a.pos.x, 0, spot.z - a.pos.z)
 			var d := to.length()
 			if d > 0.6:
-				if hero.alive and not maze.line_clear(a.pos, spot):
-					desire = game.hero_flow(a.pos)
+				if not maze.line_clear(a.pos, spot):
+					desire = game.hero_flow(a.pos) if hero.alive else maze.flow_dir(a.pos, maze.to_castle_next)
 					if desire == Vector3.ZERO:
 						desire = to / d
-				elif not hero.alive and not maze.line_clear(a.pos, spot):
-					desire = maze.flow_dir(a.pos, maze.to_castle_next)
 				else:
 					desire = to / d * clampf(d / 2.0, 0.2, 1.0)
 				a.facing = lerp_angle(a.facing, atan2(desire.x, desire.z), minf(1.0, dt * 8.0))
-		var want := desire * a.speed
-		a.vel = a.vel.lerp(want, minf(1.0, dt * 8.0))
-		var np := maze.collide(a.pos + a.vel * dt, a.r)
-		var moved := (np - a.pos).length()
-		if moved > 0.002:
-			a.anim += moved * 2.4
-		a.pos = np
+		_step(a, desire * a.speed, dt, 8.0)
+
+
+# ------------------------------------------------------------- miners
+
+func _update_workers(dt: float) -> void:
+	var nodes: ResNodes = game.nodes
+	for w in workers:
+		if not w.alive:
+			if w.dying <= 0.0:
+				w.respawn_t -= dt
+				if w.respawn_t <= 0.0:
+					w.alive = true
+					w.hp = w.max_hp
+					w.mode = "w_go"
+					w.pos = maze.collide(maze.castle_pos + Vector3(randf_range(-3, 3), 0, -7.5), w.r)
+			continue
+		w.flash = maxf(0.0, w.flash - dt)
+		w.hp = minf(w.max_hp, w.hp + dt)
+		var desire := Vector3.ZERO
+		# Run home when a foe gets close.
+		w.think -= dt
+		if w.think <= 0.0:
+			w.think = 0.25
+			w.aggro = false
+			for e: Unit in enemies_near(w.pos, 4.5):
+				if e.mode == "march" or e.t_ally == w:
+					w.aggro = true
+					break
+		match w.mode:
+			"w_go":
+				if w.job == null or w.job.amount <= 0.0:
+					if w.job != null:
+						w.job.workers -= 1
+					w.job = nodes.pick_for_worker()
+					if w.job != null:
+						w.job.workers += 1
+				if w.job == null:
+					desire = _march_dir(w.pos) if (w.pos - maze.castle_pos).length() > 9.0 else Vector3.ZERO
+				elif w.aggro:
+					desire = _march_dir(w.pos)
+				else:
+					var to: Vector3 = w.job.pos - w.pos
+					to.y = 0
+					if to.length() < 1.9:
+						w.mode = "w_mine"
+					elif to.length() < 4.0 and maze.line_clear(w.pos, w.job.pos):
+						desire = to.normalized()
+					else:
+						desire = maze.flow_dir(w.pos, nodes.path_to(w.job))
+			"w_mine":
+				if w.job == null or w.job.amount <= 0.0 or w.cargo >= 12.0 or w.aggro:
+					if w.job != null:
+						w.job.workers -= 1
+						w.job = null
+					w.mode = "w_home"
+				else:
+					var got: float = nodes.take(w.job, 3.0 * dt)
+					w.cargo += got
+					w.anim += dt * 8.0
+					var tj: Vector3 = w.job.pos - w.pos
+					w.facing = atan2(tj.x, tj.z)
+					w.lunge = absf(sin(game.time * 8.0)) * 0.5
+			"w_home":
+				if (w.pos - maze.castle_pos).length() < 9.0:
+					if w.cargo >= 1.0:
+						game.castle.add_gold(floorf(w.cargo), w.pos)
+						game.sfx.play("coin", -8.0, 0.1)
+					w.cargo = 0.0
+					w.mode = "w_go"
+				else:
+					desire = _march_dir(w.pos)
+		if desire.length_squared() > 0.01:
+			w.facing = lerp_angle(w.facing, atan2(desire.x, desire.z), minf(1.0, dt * 8.0))
+		_step(w, desire * w.speed, dt, 8.0)
 
 
 func _update_dying(dt: float) -> void:
@@ -453,7 +694,6 @@ func _update_dying(dt: float) -> void:
 		if u.dying <= 0.0:
 			dying.remove_at(i)
 		i -= 1
-	# Drop dead enemies from the live list.
 	var j := enemies.size() - 1
 	while j >= 0:
 		if not enemies[j].alive:
@@ -469,15 +709,18 @@ func render() -> void:
 		groups[k] = []
 	for u in enemies:
 		(groups[u.kind] as Array).append(u)
-	for a in allies:
-		if a.alive:
-			(groups[a.kind] as Array).append(a)
+	for list: Array[Unit] in [allies, soldiers, workers]:
+		for a in list:
+			if a.alive:
+				(groups[a.kind] as Array).append(a)
 	for u in dying:
 		(groups[u.kind] as Array).append(u)
 	for k in mms:
 		var mm: MultiMesh = mms[k]
 		var list: Array = groups[k]
 		var n := mini(list.size(), mm.instance_count)
+		if n == 0 and mm.visible_instance_count == 0:
+			continue
 		var buf: PackedFloat32Array = _buffers.get(k, PackedFloat32Array())
 		if buf.size() != mm.instance_count * 16:
 			buf.resize(mm.instance_count * 16)
@@ -501,9 +744,7 @@ func render() -> void:
 			buf[o] = b.x.x; buf[o + 1] = b.y.x; buf[o + 2] = b.z.x; buf[o + 3] = p.x
 			buf[o + 4] = b.x.y; buf[o + 5] = b.y.y; buf[o + 6] = b.z.y; buf[o + 7] = y
 			buf[o + 8] = b.x.z; buf[o + 9] = b.y.z; buf[o + 10] = b.z.z; buf[o + 11] = p.z
-			var col := Color(1, 1, 1)
-			if u.elite:
-				col = Color(1.0, 0.8, 0.62)
+			var col := u.tint
 			if u.flash > 0.0 or u.dying > 0.0:
 				col = Color(1.0, 0.3, 0.25)
 			buf[o + 12] = col.r; buf[o + 13] = col.g; buf[o + 14] = col.b; buf[o + 15] = 1.0

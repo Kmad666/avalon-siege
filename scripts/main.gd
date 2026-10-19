@@ -6,7 +6,15 @@ static var inst: Game
 static var skip_title := false
 
 const CITADEL_HP := 6000.0
-const FIRST_WAVE := 100.0
+const FIRST_WAVE := 150.0
+const MINIBOSSES := [
+	{"name": "Gorm the Goblin King", "kind": "goblin", "scale": 2.3, "hp": 900.0, "tint": Color(1.0, 0.85, 0.35), "relic": {"name": "Goblin Hoard", "desc": "+35% gold from every coin", "stat": "gold"}},
+	{"name": "Urzag the Warlord", "kind": "orc", "scale": 2.0, "hp": 1500.0, "tint": Color(1.0, 0.55, 0.45), "relic": {"name": "Warlord's Banner", "desc": "Camelot's armies +25% stronger", "stat": "army"}},
+	{"name": "The Bone Lich", "kind": "skeleton", "scale": 2.0, "hp": 1300.0, "tint": Color(0.75, 0.55, 1.0), "relic": {"name": "Lich Phylactery", "desc": "-12% spell cooldowns", "stat": "cd"}},
+	{"name": "Grukk the Troll King", "kind": "ogre", "scale": 1.6, "hp": 2600.0, "tint": Color(0.6, 0.95, 0.6), "relic": {"name": "Troll Heart", "desc": "+60 max HP", "stat": "hp"}},
+	{"name": "Ogre Magus", "kind": "ogre", "scale": 1.6, "hp": 2800.0, "tint": Color(0.55, 0.7, 1.0), "relic": {"name": "Mana Font", "desc": "+20% spell damage", "stat": "dmg"}},
+	{"name": "The Black Knight", "kind": "dark_knight", "scale": 1.5, "hp": 3200.0, "tint": Color(0.55, 0.55, 0.6), "relic": {"name": "Storm Crown", "desc": "Chain Lightning +2 bounces", "stat": "bounce"}},
+]
 
 var maze: Maze
 var horde: Horde
@@ -29,6 +37,11 @@ var wave := 0
 var wave_t := FIRST_WAVE
 var spawn_queue: Array = []   # [delay, kind, power, elite]
 var spawn_t := 0.0
+var ally_queue: Array = []    # [delay, kind, power]
+var ally_t := 0.0
+var books := 0
+var choice_title := "LEVEL UP!  Choose a blessing"
+var minibosses: Array[Unit] = []
 var kills := 0
 var stats_delivered := 0.0
 var shake := 0.0
@@ -69,6 +82,7 @@ var shot_times: Array = []
 var bench := false
 var stress := false
 var defend := false
+var war := false
 var ui_test := false
 var _ui_step := 0
 var _bench_frames := 0
@@ -132,7 +146,7 @@ func _ready() -> void:
 	if (shot_dir != "" or bench) and not ui_test:
 		# Test mode: early war, every spell unlocked, march on the citadel.
 		wave_t = 6.0
-		hero.weapons = {"sword": 2, "bolts": 2, "fireball": 2, "nova": 2, "axes": 2, "lightning": 2}
+		hero.weapons = {"lightning": 2, "bolts": 2, "fireball": 2, "nova": 2, "orbs": 2, "heal": 2}
 		hero.max_hp = 600.0
 		hero.hp = 600.0
 	if stress:
@@ -140,6 +154,9 @@ func _ready() -> void:
 		for k in 230:
 			var t: Vector2i = gates[k % gates.size()]
 			horde.spawn(["goblin", "orc", "skeleton"][k % 3], Maze.tile_center(t) + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)), "march", 1.0)
+		var cg := _castle_gates()
+		for k in 100:
+			horde.spawn_soldier(["footman", "swordsman", "archer"][k % 3], Maze.tile_center(cg[k % cg.size()]) + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)), 1.0)
 		hero.position = maze.citadel_pos + Vector3(14, 0, 14)
 		hero.position = maze.collide(hero.position, 0.5)
 
@@ -151,8 +168,14 @@ func _parse_args() -> void:
 			shot_times = [1.0, 6.0, 14.0, 24.0, 40.0, 60.0, 90.0, 115.0, 140.0]
 			if a.ends_with("quick"): shot_times = [10.0, 30.0]
 			autopilot = true
+		elif a.begins_with("--zoom="):
+			cam_size = float(a.substr(7))
 		elif a == "--ui":
 			ui_test = true
+		elif a == "--war":
+			war = true
+			shot_times = [20.0, 35.0, 50.0, 65.0, 80.0, 100.0]
+			autopilot = true
 		elif a == "--defend":
 			defend = true
 			shot_times = [5.0, 70.0, 85.0, 100.0, 120.0]
@@ -246,11 +269,49 @@ func _spawn_camps() -> void:
 			if u != null:
 				u.camp_id = cid
 		cid += 1
+	_spawn_minibosses()
+
+
+## Six named mini-bosses lair in glades spread across the maze, toughest furthest out.
+func _spawn_minibosses() -> void:
+	var cands: Array = []
+	var cid := 0
+	for room: Rect2i in maze.rooms:
+		var c := room.get_center()
+		if not (absi(c.x - maze.castle_tile.x) < 11 and absi(c.y - maze.castle_tile.y) < 11):
+			cands.append([maze.region[Maze.idx(c)], room, cid])
+			cid += 1
+	cands.sort_custom(func(a, b): return a[0] < b[0])
+	if cands.is_empty():
+		return
+	for i in MINIBOSSES.size():
+		var pick: Array = cands[mini(cands.size() - 1, int(float(i) / MINIBOSSES.size() * cands.size() + cands.size() * 0.1))]
+		var room: Rect2i = pick[1]
+		var def: Dictionary = MINIBOSSES[i]
+		var t := maze.random_floor_in(room)
+		if t.x < 0:
+			continue
+		var u := horde.spawn(def.kind, Maze.tile_center(t), "camp", 1.0, false)
+		if u == null:
+			continue
+		u.mini = i
+		u.title = def.name
+		u.tint = def.tint
+		u.scale = def.scale
+		u.r *= def.scale * 0.8
+		u.max_hp = def.hp * (1.0 + pick[0] * 0.6)
+		u.hp = u.max_hp
+		u.dmg *= 2.2
+		u.xp = 40
+		u.gold_chance = 1.0
+		u.camp_id = pick[2]
+		u.speed *= 0.85
+		minibosses.append(u)
 
 
 func start() -> void:
 	state = "play"
-	hud.message("Tip: build an Archer Tower (press 2) before the first wave, then head into the maze.", 7.0, Color(1, 0.9, 0.6))
+	hud.message("Tip: hire Miners (3) and an Archer Tower (2), then explore. Spellbooks and mini-bosses hide in the maze.", 8.0, Color(1, 0.9, 0.6))
 
 
 # ------------------------------------------------------------- main loop
@@ -262,8 +323,14 @@ func _process(delta: float) -> void:
 	if state == "play":
 		play_time += dt
 		_update_world(dt)
-		if levelups > 0:
+		if books > 0:
 			state = "levelup"
+			choice_title = "SPELLBOOK FOUND!  Learn a spell"
+			choices = hero.roll_choices(true)
+			auto_choice_t = 0.6
+		elif levelups > 0:
+			state = "levelup"
+			choice_title = "LEVEL UP!  Choose a blessing"
 			choices = hero.roll_choices()
 			auto_choice_t = 0.6
 	elif state == "levelup":
@@ -378,8 +445,11 @@ func autopilot_dir() -> Vector3:
 		for i in Castle.UPGRADES.size():
 			if castle.can_afford(Castle.UPGRADES[i].key):
 				castle.buy(Castle.UPGRADES[i].key)
+	if war:
+		return Vector3.ZERO
 	if defend:
-		castle.treasury = {"gold": 400.0, "wood": 400.0, "crystal": 400.0}
+		if play_time < 3.0:
+			castle.gold = 3000.0
 		var foe2 := horde.nearest_enemy(hero.position, 6.0)
 		if foe2 != null:
 			return Vector3.ZERO
@@ -416,8 +486,16 @@ func _update_waves(dt: float) -> void:
 	wave_t -= dt
 	if wave_t <= 0.0:
 		wave += 1
-		wave_t = maxf(45.0, 75.0 - wave * 2.5)
+		wave_t = maxf(85.0, 120.0 - wave * 2.5)
 		_queue_wave()
+	if not ally_queue.is_empty():
+		ally_t -= dt
+		if ally_t <= 0.0:
+			var a: Array = ally_queue.pop_front()
+			ally_t = a[0]
+			var cg := _castle_gates()
+			var ap: Vector3 = Maze.tile_center(cg[randi() % cg.size()]) + Vector3(randf_range(-0.8, 0.8), 0, randf_range(-0.8, 0.8))
+			horde.spawn_soldier(a[1], ap, a[2])
 	if not spawn_queue.is_empty():
 		spawn_t -= dt
 		if spawn_t <= 0.0:
@@ -430,8 +508,8 @@ func _update_waves(dt: float) -> void:
 
 
 func _queue_wave() -> void:
-	var n := mini(3 + wave * 3, 70)
-	var power := 1.0 + 0.13 * wave
+	var n := mini(3 + wave * 2, 50)
+	var power := 1.0 + 0.12 * wave
 	var boss := wave % 5 == 0
 	for k in n:
 		var roll := randf()
@@ -446,9 +524,15 @@ func _queue_wave() -> void:
 			spawn_queue.append([0.4, "ogre", power, false])
 	if boss:
 		spawn_queue.append([0.5, "dark_knight", power, false])
+	# Camelot answers with a mirrored host, so the two armies meet mid-maze.
+	var apower := power * castle.army_power()
+	for s in spawn_queue:
+		ally_queue.append([s[0], Horde.MIRROR[s[1]], apower * (1.6 if s[3] else 1.0)])
+	for k in castle.level("warcamp"):
+		ally_queue.append([0.3, "swordsman" if k % 2 == 0 else "archer", apower])
 	if wave % 4 == 0:
 		_refill_camps()
-	var msg := "Wave %d — the Dread Army marches on Camelot!" % wave
+	var msg := "Wave %d — the armies march! Camelot's host rides to meet them." % wave
 	if boss:
 		msg = "Wave %d — a Dark Knight leads the host!" % wave
 	hud.message(msg, 4.5, Color(1.0, 0.45, 0.35))
@@ -478,6 +562,21 @@ func _refill_camps() -> void:
 		cid += 1
 
 
+## Open tiles just outside Camelot on the maze side, where its soldiers muster.
+func _castle_gates() -> Array:
+	var out := []
+	var c := maze.castle_tile
+	for dy in range(-3, 4):
+		for dx in range(-3, 4):
+			if absi(dx) == 3 or absi(dy) == 3:
+				var t := c + Vector2i(dx, dy)
+				if maze.is_open_t(t) and (dx < 0 or dy < 0):
+					out.append(t)
+	if out.is_empty():
+		out.append(c + Vector2i(-3, -2))
+	return out
+
+
 func _citadel_gates() -> Array:
 	var out := []
 	var c := maze.citadel_tile
@@ -496,10 +595,20 @@ func _update_citadel(dt: float) -> void:
 	if citadel_hp <= 0.0:
 		return
 	citadel_flash = maxf(0.0, citadel_flash - dt)
+	citadel_hp = minf(CITADEL_HP, citadel_hp + dt * 3.0)
 	var d := (hero.position - maze.citadel_pos).length()
-	if hero.alive and d < 17.0:
+	# The citadel's dark bolts also rain on Camelot's soldiers at its gates.
+	var sold := horde.nearest_friend(maze.citadel_pos, 15.0)
+	if sold != null and not (hero.alive and d < 17.0):
 		citadel_fire_t -= dt
 		if citadel_fire_t <= 0.0:
+			citadel_fire_t = 0.9
+			fx.shoot("dark", maze.citadel_pos + Vector3(0, 6.0, 0), sold.pos + Vector3(0, 0.8, 0), 12.0, 24.0 + wave * 2.0, 1)
+	var hero_near := hero.alive and d < 17.0
+	if hero_near or sold != null:
+		if hero_near:
+			citadel_fire_t -= dt
+		if hero_near and citadel_fire_t <= 0.0:
 			citadel_fire_t = maxf(0.9, 1.8 - wave * 0.05)
 			var src := maze.citadel_pos + Vector3(0, 6.0, 0)
 			var aim := hero.position + hero.vel * 0.4 + Vector3(0, 0.8, 0)
@@ -524,12 +633,13 @@ func _update_citadel(dt: float) -> void:
 						citadel_guards.append(u)
 
 
-func damage_citadel(amount: float) -> void:
-	if citadel_hp <= 0.0 or state != "play":
+func damage_citadel(amount: float, show := true) -> void:
+	if citadel_hp <= 0.0 or state != "play" or amount <= 0.0:
 		return
 	citadel_hp -= amount
 	citadel_flash = 0.15
-	fx.number(maze.citadel_pos + Vector3(randf_range(-2, 2), 6.0, randf_range(-2, 2)), str(int(round(amount))), Color(1, 0.6, 0.5))
+	if show:
+		fx.number(maze.citadel_pos + Vector3(randf_range(-2, 2), 6.0, randf_range(-2, 2)), str(int(round(amount))), Color(1, 0.6, 0.5))
 	if citadel_hp <= 0.0:
 		citadel_hp = 0.0
 		state = "won"
@@ -568,11 +678,25 @@ func on_enemy_killed(u: Unit) -> void:
 	kills += 1
 	fx.drop("gem", u.pos, u.xp)
 	if randf() < u.gold_chance:
-		var coins := 1 if not u.elite else 3
+		var base: int = {"goblin": 3, "orc": 6, "skeleton": 4, "ogre": 16, "dark_knight": 40}.get(u.kind, 3)
+		var coins := 1
+		if u.elite:
+			coins = 3
 		if u.boss:
-			coins = 6
+			coins = 5
+		if u.mini >= 0:
+			coins = 10
 		for k in coins:
-			fx.drop("coin", u.pos, randi_range(1, 3) + (2 if u.boss else 0))
+			fx.drop("coin", u.pos, base + randi_range(0, base / 2) + wave / 2)
+	if u.mini >= 0:
+		var r: Dictionary = MINIBOSSES[u.mini].relic
+		hero.apply_relic(r)
+		shake = 0.35
+		fx.ring(u.pos, 0.5, 6.0, Color(1, 0.85, 0.4), 0.8, 0.2)
+		fx.burst(u.pos + Vector3(0, 1, 0), Color(1, 0.85, 0.4), 30, 7.0, 0.2, 6.0)
+		hud.message("%s is slain!  Relic: %s — %s" % [u.title, r.name, r.desc], 6.0, Color(1, 0.85, 0.4))
+		sfx.play("levelup", 2.0, 0.0, 0.0)
+		return
 	var pc := 0.015
 	if u.elite:
 		pc = 0.25
@@ -587,9 +711,9 @@ func on_enemy_killed(u: Unit) -> void:
 
 func on_hero_died(lost: float) -> void:
 	shake = 0.3
-	var msg := "Sir Percival has fallen! Returning to Camelot..."
+	var msg := "Merlin has fallen! Returning to Camelot..."
 	if lost >= 1.0:
-		msg += "  (%d resources lost)" % int(lost)
+		msg += "  (%d gold ore lost)" % int(lost)
 	hud.message(msg, 5.0, Color(1, 0.4, 0.35))
 
 
@@ -610,16 +734,21 @@ func queue_levelup() -> void:
 	fx.sparkle(hero.position, Color(0.6, 0.9, 1.0), 14, 0.12)
 
 
+func on_spellbook() -> void:
+	books += 1
+	sfx.play("levelup", 2.0, 0.0, 0.0)
+
+
 func choose(i: int) -> void:
 	if state != "levelup" or i < 0 or i >= choices.size():
 		return
 	hero.apply_choice(choices[i])
-	levelups -= 1
-	if levelups > 0:
-		choices = hero.roll_choices()
-		auto_choice_t = 0.6
+	if books > 0:
+		books -= 1
 	else:
-		state = "play"
+		levelups -= 1
+	# Return to play; the next pending choice (if any) opens on the next frame.
+	state = "play"
 
 
 func try_buy(i: int) -> void:
@@ -635,7 +764,7 @@ func try_buy(i: int) -> void:
 	elif castle.level(key) >= Castle.MAX_LEVEL:
 		hud.message("%s is fully upgraded." % Castle.UPGRADES[i].name, 1.5)
 	else:
-		hud.message("Not enough resources in the treasury.", 1.5, Color(1, 0.6, 0.5))
+		hud.message("Not enough gold in the treasury.", 1.5, Color(1, 0.6, 0.5))
 
 
 func at_castle() -> bool:
@@ -708,7 +837,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.message("Sound off" if sfx.muted else "Sound on", 1.2)
 			KEY_TAB, KEY_M:
 				hud.big_map = not hud.big_map
-		if state == "play" and k >= KEY_1 and k <= KEY_8:
+		if state == "play" and k >= KEY_1 and k <= KEY_9:
 			try_buy(k - KEY_1)
 
 
@@ -726,6 +855,15 @@ func _mouse_ground() -> Vector3:
 
 func _update_camera(dt: float, snap: bool) -> void:
 	var target := hero.position if hero.alive else maze.castle_pos
+	if war:
+		# Follow the front line: the soldier furthest along the road to the citadel.
+		var best := INF
+		for s in horde.soldiers:
+			if s.alive:
+				var d: int = maze.to_citadel_dist[Maze.idx(Maze.tile_of(s.pos))]
+				if d < best:
+					best = d
+					target = s.pos
 	if state == "won" and end_t < 4.0:
 		target = maze.citadel_pos
 	if snap:
@@ -807,7 +945,7 @@ func _ui_shots() -> void:
 	match name_s:
 		"title":
 			start()
-			hero.add_xp(hero.xp_next + 1)
+			on_spellbook()
 		"levelup":
 			choose(0)
 			state = "paused"
@@ -833,6 +971,10 @@ func _shots() -> void:
 		var line := ""
 		for k in prof: line += "%s=%.2f " % [k, prof[k] / 1000.0 / maxf(1.0, Engine.get_process_frames())]
 		print("  per-frame ms: ", line)
+		var wk := 0
+		for w in horde.workers:
+			if w.alive: wk += 1
+		print("SHOT gold=%d workers=%d soldiers=%d" % [castle.gold, wk, horde.soldiers.size()])
 		print("SHOT t=%d fps=%.1f enemies=%d allies=%d lvl=%d wave=%d hp=%d carry=%d castle=%d draws=%d" % [t, fps_now, horde.enemies.size(), horde.allies.size(), hero.level, wave, hero.hp, hero.carry_total(), castle.hp,
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)])
 		if shot_times.is_empty():
