@@ -151,6 +151,28 @@ func _desc(key: String) -> String:
 	return ""
 
 
+## Camelot starts fully defended: every archer tower raised, stout walls, the
+## mage tower lit, and Royal Guards posted at each gate.
+func fortify() -> void:
+	levels["towers"] = MAX_LEVEL
+	for t in tower_nodes:
+		t.visible = true
+	levels["walls"] = 2
+	max_hp = BASE_HP + 300.0 * 2
+	hp = max_hp
+	levels["mage"] = 1
+	mage_orb.visible = true
+	var maze := game.maze
+	var posts := [Vector3(-11, 0, -11), Vector3(-9, 0, -13), Vector3(-13, 0, -9),   # War Lane gate
+		Vector3(-1.5, 0, -12), Vector3(1.5, 0, -12),                                  # East Road gate
+		Vector3(-12, 0, -1.5), Vector3(-12, 0, 1.5),                                  # South Road gate
+		Vector3(-7, 0, -7)]
+	for p in posts:
+		var w: Vector3 = position + p
+		if maze.is_open_p(w):
+			game.horde.add_guard(w)
+
+
 func ally_power() -> float:
 	return 1.0 + 0.25 * level("barracks") + 0.15 * level("forge")
 

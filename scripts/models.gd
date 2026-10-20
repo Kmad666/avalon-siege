@@ -834,3 +834,66 @@ static func loot_mesh() -> ArrayMesh:
 		g.box(Vector3(-0.2, 0.2, 0), Vector3(0.05, 0.34, 0.38), Color(0.75, 0.62, 0.3))
 		g.box(Vector3(0.2, 0.2, 0), Vector3(0.05, 0.34, 0.38), Color(0.75, 0.62, 0.3))
 		return g.mesh())
+
+
+static func royal_guard_mesh() -> ArrayMesh:
+	return _cached("royal_guard", func():
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.6, 8, SHADOW)
+		g.push_at(Vector3.ZERO, 0.0, Vector3(1.3, 1.3, 1.3))
+		var gold := Color(0.95, 0.78, 0.3)
+		_soldier_base(g, Color(0.75, 0.12, 0.15), Color(0.82, 0.82, 0.88))
+		g.box(Vector3(0, 0.62, 0.15), Vector3(0.12, 0.2, 0.02), gold)
+		g.box(Vector3(0, 1.08, 0.12), Vector3(0.18, 0.04, 0.05), Color(0.1, 0.1, 0.12))
+		g.prism(Vector3(0, 1.1, -0.02), 0.06, 0.03, 0.3, 4, Color(0.85, 0.15, 0.15))   # crest
+		# halberd
+		g.box(Vector3(0.3, 0.75, 0.25), Vector3(0.05, 0.05, 1.6), Color(0.45, 0.32, 0.2))
+		g.box(Vector3(0.3, 0.75, 1.0), Vector3(0.04, 0.32, 0.22), Color(0.85, 0.87, 0.92))
+		g.box(Vector3(-0.3, 0.68, 0.06), Vector3(0.07, 0.5, 0.4), Color(0.75, 0.12, 0.15), gold)
+		g.pop()
+		return g.mesh())
+
+
+## Hooded, robed adept of the Circle of Avalon. 0 frost, 1 ember, 2 thorn, 3 light.
+static func adept_mesh(i: int) -> ArrayMesh:
+	return _cached("adept_%d" % i, func():
+		var robes := [Color(0.3, 0.48, 0.78), Color(0.7, 0.28, 0.14), Color(0.28, 0.46, 0.22), Color(0.86, 0.84, 0.76)]
+		var gems := [Color(0.6, 0.9, 1.0), Color(1.0, 0.55, 0.15), Color(0.5, 1.0, 0.35), Color(1.0, 0.95, 0.55)]
+		var robe: Color = robes[i]
+		var g := Geo.new()
+		g.disc(Vector3(0, 0.03, 0), 0.42, 8, SHADOW)
+		g.prism(Vector3(0, 0.03, 0), 0.34, 0.2, 0.82, 8, robe, Color(0, 0, 0, 0), 0.2)
+		g.prism(Vector3(0, 0.85, 0), 0.2, 0.17, 0.22, 8, robe.lightened(0.05), Color(0, 0, 0, 0), 0.2)
+		g.box(Vector3(0, 0.6, 0), Vector3(0.42, 0.05, 0.38), robe.darkened(0.35))           # rope belt
+		g.box(Vector3(-0.27, 0.78, 0.06), Vector3(0.13, 0.13, 0.3), robe.darkened(0.12))     # sleeves
+		g.box(Vector3(0.27, 0.78, 0.06), Vector3(0.13, 0.13, 0.3), robe.darkened(0.12))
+		# Deep pointed hood with a shadowed face and glowing eyes.
+		g.prism(Vector3(0, 0.98, -0.03), 0.22, 0.0, 0.62, 7, robe.darkened(0.08), Color(0, 0, 0, 0), 0.3)
+		g.box(Vector3(0, 1.1, 0.13), Vector3(0.18, 0.16, 0.04), Color(0.05, 0.05, 0.07))
+		g.box(Vector3(-0.045, 1.12, 0.155), Vector3(0.04, 0.025, 0.01), gems[i])
+		g.box(Vector3(0.045, 1.12, 0.155), Vector3(0.04, 0.025, 0.01), gems[i])
+		# Staff with a glowing focus.
+		g.box(Vector3(0.3, 0.75, 0.18), Vector3(0.045, 1.4, 0.045), Color(0.4, 0.27, 0.16))
+		g.shard(Vector3(0.3, 1.45, 0.18), 0.07, 0.2, gems[i])
+		return g.mesh())
+
+
+## A Dread garrison camp: a black banner, a ring of stakes and a fire pit.
+static func dread_camp_mesh() -> ArrayMesh:
+	return _cached("dread_camp", func():
+		var g := Geo.new()
+		var wood := Color(0.32, 0.22, 0.16)
+		for k in 9:
+			var a := k * TAU / 9.0 + 0.2
+			if k % 3 == 1:
+				continue
+			var p := Vector3(cos(a), 0, sin(a)) * 4.6
+			g.push(Transform3D(Basis(Vector3(cos(a + PI * 0.5), 0, sin(a + PI * 0.5)), 0.35), p))
+			g.prism(Vector3.ZERO, 0.13, 0.0, 1.5, 4, wood)
+			g.pop()
+		g.box(Vector3(1.5, 1.6, -1.5), Vector3(0.12, 3.2, 0.12), Color(0.2, 0.18, 0.18))
+		g.quad(Vector3(1.5, 3.1, -1.5), Vector3(1.5, 2.0, -1.5), Vector3(2.4, 2.1, -1.5), Vector3(2.4, 3.0, -1.5), Color(0.55, 0.08, 0.08))
+		g.quad(Vector3(2.4, 3.0, -1.5), Vector3(2.4, 2.1, -1.5), Vector3(1.5, 2.0, -1.5), Vector3(1.5, 3.1, -1.5), Color(0.4, 0.05, 0.05))
+		g.prism(Vector3(-1.2, 0, 1.2), 0.6, 0.5, 0.2, 7, Color(0.3, 0.28, 0.27))
+		g.shard(Vector3(-1.2, 0.15, 1.2), 0.3, 0.6, Color(1.0, 0.5, 0.15))
+		return g.mesh())

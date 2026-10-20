@@ -16,6 +16,7 @@ var msg := ""
 var msg_t := 0.0
 var msg_col := Color.WHITE
 var minimap_dirty := true
+var new_tiles := PackedInt32Array()
 var map_tex: ImageTexture
 var map_img: Image
 var big_map := false
@@ -78,37 +79,88 @@ func click(p: Vector2, right := false) -> bool:
 	return false
 
 
+var _seen_t := 0.0
+
+
+## Which Dread units can be seen through the fog: near Merlin, Camelot, a held
+## shrine, or any of Camelot's own troops.
+func _update_seen() -> void:
+	var hp := game.hero.position
+	var cp := game.maze.castle_pos
+	var shrines := game.marks.owned_shrines()
+	var fb := game.horde.fbucket
+	for u in game.horde.enemies:
+		var p := u.pos
+		var s := (hp - p).length_squared() < 400.0 or (cp - p).length_squared() < 500.0
+		if not s:
+			for sh in shrines:
+				if (sh.pos - p).length_squared() < 150.0:
+					s = true
+					break
+		if not s:
+			var t := Maze.tile_of(p)
+			for dy in range(-2, 3):
+				for dx in range(-2, 3):
+					var fi := (t.y + dy) * Maze.G + t.x + dx
+					if fi >= 0 and fi < fb.size() and fb[fi] != null:
+						s = true
+						break
+				if s:
+					break
+		u.seen = s
+
+
 func _process(dt: float) -> void:
 	msg_t = maxf(0.0, msg_t - dt)
+	_seen_t -= dt
+	if _seen_t <= 0.0 and game.horde != null:
+		_seen_t = 0.3
+		_update_seen()
 	for l in loot_log:
 		l[2] -= dt
 	while not loot_log.is_empty() and loot_log[0][2] <= 0.0:
 		loot_log.pop_front()
 	_map_t -= dt
-	if minimap_dirty and _map_t <= 0.0:
-		_map_t = 0.4
+	if minimap_dirty:
 		minimap_dirty = false
+		new_tiles.clear()
 		_refresh_map()
+	elif not new_tiles.is_empty() and _map_t <= 0.0:
+		_map_t = 0.25
+		var m := game.maze
+		for i in new_tiles:
+			map_img.set_pixel(i % Maze.G, i / Maze.G, _tile_col(m, i))
+		new_tiles.clear()
+		map_tex.update(map_img)
 
 
 func _refresh_map() -> void:
 	var m := game.maze
 	for y in Maze.G:
 		for x in Maze.G:
-			var i := y * Maze.G + x
-			var c := Color(0, 0, 0, 0)
-			if m.explored[i] != 0:
-				match m.tiles[i]:
-					Maze.FLOOR: c = Color(0.55, 0.6, 0.45, 0.95).lerp(Color(0.45, 0.38, 0.36, 0.95), m.region[i])
-					Maze.WALL: c = Color(0.16, 0.2, 0.14, 0.95).lerp(Color(0.14, 0.11, 0.12, 0.95), m.region[i])
-					Maze.KEEP: c = Color(0.45, 0.6, 1.0, 1)
-					Maze.CITADEL: c = Color(0.9, 0.2, 0.15, 1)
-			map_img.set_pixel(x, y, c)
+			map_img.set_pixel(x, y, _tile_col(m, y * Maze.G + x))
 	map_tex.update(map_img)
 
 
+func _tile_col(m: Maze, i: int) -> Color:
+	if m.explored[i] == 0:
+		return Color(0, 0, 0, 0)
+	match m.tiles[i]:
+		Maze.FLOOR:
+			if m.lane[i] == Maze.L_WAR:
+				return Color(0.62, 0.42, 0.32, 0.95)
+			if m.lane[i] == Maze.L_ROAD:
+				return Color(0.78, 0.74, 0.6, 0.95)
+			return Color(0.55, 0.6, 0.45, 0.95).lerp(Color(0.45, 0.38, 0.36, 0.95), m.region[i])
+		Maze.WALL: return Color(0.16, 0.2, 0.14, 0.95).lerp(Color(0.14, 0.11, 0.12, 0.95), m.region[i])
+		Maze.KEEP: return Color(0.45, 0.6, 1.0, 1)
+		Maze.CITADEL: return Color(0.9, 0.2, 0.15, 1)
+	return Color(0, 0, 0, 0)
+
+
 func _str(p: Vector2, text: String, size: int, col: Color, align := HORIZONTAL_ALIGNMENT_LEFT, width := -1.0) -> void:
-	draw_string_outline(font, p, text, align, width, size, 4, Color(0, 0, 0, 0.85))
+	# A drop shadow is far cheaper than an outline and reads just as well.
+	draw_string(font, p + Vector2(1.5, 1.5), text, align, width, size, Color(0, 0, 0, 0.8 * col.a))
 	draw_string(font, p, text, align, width, size, col)
 
 
@@ -149,6 +201,7 @@ func _draw2() -> void:
 	_draw_upgrades(vs)
 	_draw_minimap(vs)
 	_draw_mute(vs, 92.0)
+	_draw_squad(vs)
 	if msg_t > 0.0 and (game.state == "play" or game.state == "paused" or (game.state == "won" and game.end_t < 1.5)):
 		var a := clampf(msg_t, 0.0, 1.0)
 		var c := msg_col
@@ -170,11 +223,20 @@ func _draw2() -> void:
 		"won": _draw_end(vs, true)
 
 
+## Through the fog, only what is near Merlin can be made out.
+func _visible(p: Vector3, extra := 1.0) -> bool:
+	var c := game.hero.position if game.hero.alive else game.maze.castle_pos
+	var dx := p.x - c.x
+	var dz := p.z - c.z
+	var r := Game.VISION * 1.45 * extra
+	return dx * dx + dz * dz < r * r
+
+
 func _draw_world_text() -> void:
 	var cam := game.camera
 	for n in game.fx.numbers:
 		var p3: Vector3 = n[0] + Vector3(0, n[3] * 1.6, 0)
-		if cam.is_position_behind(p3):
+		if cam.is_position_behind(p3) or not _visible(p3):
 			continue
 		var sp := cam.unproject_position(p3)
 		var c: Color = n[2]
@@ -183,8 +245,10 @@ func _draw_world_text() -> void:
 		_str(sp - Vector2(40, 0), n[1], size, c, HORIZONTAL_ALIGNMENT_CENTER, 80)
 	# HP bars over elites, bosses, and wounded knights.
 	for u in game.horde.enemies:
+		if not _visible(u.pos):
+			continue
 		if u.mini >= 0 or u.title != "":
-			if (u.pos - game.hero.position).length() < 18.0 and u.hp < u.max_hp or (u.pos - game.hero.position).length() < 12.0:
+			if u.hp > 0.0:
 				var sm := cam.unproject_position(u.pos + Vector3(0, 2.4 * u.scale + (3.5 if u.structure else 0.0), 0))
 				_str(sm - Vector2(100, 8), u.title, 15, Color(1, 0.8, 0.4), HORIZONTAL_ALIGNMENT_CENTER, 200)
 				_bar(Rect2(sm - Vector2(45, 0), Vector2(90, 6)), u.hp / u.max_hp, Color(0.95, 0.55, 0.15))
@@ -193,13 +257,13 @@ func _draw_world_text() -> void:
 			var sp2 := cam.unproject_position(u.pos + Vector3(0, 2.0 * u.scale + (1.0 if u.kind == "ogre" else 0.0), 0))
 			_bar(Rect2(sp2 - Vector2(22, 0), Vector2(44, 4)), u.hp / u.max_hp, Color(0.9, 0.2, 0.15))
 	for a in game.horde.allies:
-		if a.alive and a.hp < a.max_hp * 0.98:
+		if a.alive and a.hp < a.max_hp * 0.98 and _visible(a.pos):
 			var sp3 := cam.unproject_position(a.pos + Vector3(0, 1.6, 0))
 			_bar(Rect2(sp3 - Vector2(15, 0), Vector2(30, 3)), a.hp / a.max_hp, Color(0.35, 0.6, 1.0))
 	# Shrines: name, capture progress, health.
 	for s in game.marks.shrines:
 		var d := (s.pos - game.hero.position).length()
-		if d < 14.0:
+		if d < 14.0 and _visible(s.pos):
 			var sp4 := cam.unproject_position(s.pos + Vector3(0, 3.4, 0))
 			_str(sp4 - Vector2(110, 10), s.name, 14, Color(0.6, 0.8, 1.0) if s.owner == 0 else Color(1, 0.55, 0.45), HORIZONTAL_ALIGNMENT_CENTER, 220)
 			if s.owner == 1 and s.cap > 0.0:
@@ -210,13 +274,15 @@ func _draw_world_text() -> void:
 				_bar(Rect2(sp4 - Vector2(40, 0), Vector2(80, 5)), s.hp / s.max_hp, Color(0.4, 0.7, 1.0))
 	# Loot labels.
 	for dr in game.items.drops:
-		if (dr.pos - game.hero.position).length() < 12.0:
+		if _visible(dr.pos):
 			var lp := cam.unproject_position(dr.pos + Vector3(0, 0.9, 0))
 			_str(lp - Vector2(100, 0), dr.item.name, 13, Items.RARITY_COLORS[dr.item.rarity], HORIZONTAL_ALIGNMENT_CENTER, 200)
 	var h := game.hero
 	if h.alive and game.state != "title":
 		var hp_p := cam.unproject_position(h.position + Vector3(0, 2.0, 0))
 		_bar(Rect2(hp_p - Vector2(24, 0), Vector2(48, 5)), h.hp / h.max_hp, Color(0.3, 0.9, 0.35))
+		if h.barrier > 0.5:
+			draw_rect(Rect2(hp_p - Vector2(24, 0), Vector2(48 * minf(1.0, h.barrier / h.max_hp), 5)), Color(1.0, 0.95, 0.55, 0.8))
 		var tot := h.carry_total()
 		if tot > 0.0:
 			_bar(Rect2(hp_p + Vector2(-24, 8), Vector2(48, 3)), tot / h.carry_cap, GOLD)
@@ -239,6 +305,20 @@ func _draw_top_left() -> void:
 		else:
 			draw_arc(pc, 7, 0, TAU, 12, Color(0.5, 0.4, 0.4), 1.5)
 	_str(Vector2(30 + h.potion_max * 20, 95), "SPACE", 11, DIM)
+	# Blink cooldown.
+	var bc := Vector2(250, 90)
+	var ready := h.blink_t <= 0.0
+	draw_circle(bc, 12, Color(0.1, 0.14, 0.22))
+	if ready:
+		draw_circle(bc, 12, Color(0.35, 0.55, 0.95))
+	else:
+		var frac := 1.0 - h.blink_t / Hero.BLINK_CD
+		draw_arc(bc, 9, -PI * 0.5, -PI * 0.5 + TAU * frac, 24, Color(0.45, 0.65, 1.0), 6.0)
+		_str(bc + Vector2(-12, 5), str(int(ceil(h.blink_t))), 12, TEXT, HORIZONTAL_ALIGNMENT_CENTER, 24)
+	draw_arc(bc, 12, 0, TAU, 20, Color(0.6, 0.75, 1.0), 1.5)
+	_str(bc + Vector2(16, 5), "RMB", 10, DIM)
+	if h.barrier > 0.5:
+		draw_rect(Rect2(22, 44, 276 * minf(1.0, h.barrier / h.max_hp), 5), Color(1.0, 0.95, 0.55, 0.85))
 	# carried pack
 	var tot := h.carry_total()
 	var pack_col := Color(1, 0.55, 0.35) if tot >= h.carry_cap - 0.01 else DIM
@@ -354,6 +434,24 @@ func _draw_upgrades(vs: Vector2) -> void:
 			_str(Vector2(x0, y0 - 28), "%s — %s" % [u.name, u.desc], 13, TEXT)
 
 
+## The Circle of Avalon: one small health bar per adept.
+func _draw_squad(vs: Vector2) -> void:
+	var x := 12.0
+	var y := vs.y - 72.0
+	_str(Vector2(x, y - 6), "Circle of Avalon", 12, DIM)
+	var cols := {"adept_frost": Color(0.55, 0.8, 1.0), "adept_ember": Color(1.0, 0.55, 0.2), "adept_thorn": Color(0.5, 0.95, 0.35), "adept_light": Color(1.0, 0.95, 0.6)}
+	for a in game.horde.allies:
+		if a.mode != "adept":
+			continue
+		var c: Color = cols[a.kind]
+		_str(Vector2(x, y + 10), Horde.ADEPT_NAMES[a.kind], 11, c if a.alive else Color(0.5, 0.45, 0.42))
+		if a.alive:
+			_bar(Rect2(x + 40, y + 3, 44, 5), a.hp / a.max_hp, c)
+		else:
+			_str(Vector2(x + 40, y + 10), "%d s" % int(ceil(a.respawn_t)), 11, Color(1, 0.55, 0.45))
+		x += 96.0
+
+
 ## Clickable speaker icon (top right, under the treasury panel).
 func _draw_mute(vs: Vector2, y: float) -> void:
 	var r := Rect2(vs.x - 46, y, 36, 36)
@@ -392,9 +490,35 @@ func _draw_minimap(vs: Vector2) -> void:
 		if m.explored[Maze.idx(t)] == 0:
 			continue
 		draw_rect(Rect2(Vector2(n.pos.x, n.pos.z) / Maze.T - half - Vector2(0.6, 0.6), Vector2(1.2, 1.2)), GOLD)
-	for b in game.nodes.books:
-		if not b.taken and m.explored[Maze.idx(Maze.tile_of(b.pos))] != 0:
-			draw_rect(Rect2(Vector2(b.pos.x, b.pos.z) / Maze.T - half - Vector2(1.1, 1.1), Vector2(2.2, 2.2)), Color(0.5, 0.75, 1.0))
+	# Points of interest: what lies at the heart of each maze pocket is known.
+	for pk in m.pockets:
+		var rp := Maze.tile_center(pk.reward)
+		var show := true
+		var pc := GOLD
+		match pk.kind:
+			"book":
+				pc = Color(0.5, 0.75, 1.0)
+				show = false
+				for b in game.nodes.books:
+					if not b.taken and (b.pos - rp).length() < 1.0:
+						show = true
+			"chest":
+				pc = Color(1.0, 0.55, 0.15)
+				show = false
+				for dr in game.items.drops:
+					if (dr.pos - rp).length() < 2.0:
+						show = true
+		if show:
+			var mp2 := Vector2(rp.x, rp.z) / Maze.T - half
+			var pts := PackedVector2Array([mp2 + Vector2(0, -2.2), mp2 + Vector2(2.2, 0), mp2 + Vector2(0, 2.2), mp2 + Vector2(-2.2, 0)])
+			draw_colored_polygon(pts, Color(0, 0, 0, 0.85))
+			draw_colored_polygon(PackedVector2Array([mp2 + Vector2(0, -1.5), mp2 + Vector2(1.5, 0), mp2 + Vector2(0, 1.5), mp2 + Vector2(-1.5, 0)]), pc)
+	# Dread garrisons on the roads.
+	for cap in game.garrison_caps:
+		if cap.alive:
+			var gp := Vector2(cap.home.x, cap.home.z) / Maze.T - half
+			draw_line(gp + Vector2(-1.8, -1.8), gp + Vector2(1.8, 1.8), Color(0.9, 0.15, 0.15), 1.2)
+			draw_line(gp + Vector2(1.8, -1.8), gp + Vector2(-1.8, 1.8), Color(0.9, 0.15, 0.15), 1.2)
 	for s in game.horde.soldiers:
 		if s.alive:
 			draw_rect(Rect2(Vector2(s.pos.x, s.pos.z) / Maze.T - half - Vector2(0.5, 0.5), Vector2(1, 1)), Color(0.4, 0.6, 1.0))
@@ -403,11 +527,11 @@ func _draw_minimap(vs: Vector2) -> void:
 			draw_rect(Rect2(Vector2(w.pos.x, w.pos.z) / Maze.T - half - Vector2(0.5, 0.5), Vector2(1, 1)), Color(0.9, 0.85, 0.6))
 	for u in game.horde.enemies:
 		var p := Vector2(u.pos.x, u.pos.z) / Maze.T
-		if u.mode == "camp" and m.explored[Maze.idx(Maze.tile_of(u.pos))] == 0:
-			continue
 		if u.mini >= 0:
 			if m.explored[Maze.idx(Maze.tile_of(u.pos))] != 0:
 				draw_circle(p - half, 1.6, Color(1, 0.6, 0.1))
+			continue
+		if not u.seen:
 			continue
 		draw_rect(Rect2(p - half - Vector2(0.5, 0.5), Vector2(1, 1)), Color(1, 0.25, 0.2) if not u.boss else Color(1, 0.8, 0.2))
 	for a in game.horde.allies:
@@ -492,9 +616,9 @@ func _draw_title(vs: Vector2) -> void:
 	_str(Vector2(0, y), "AVALON SIEGE", 60, GOLD, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	_str(Vector2(0, y + 36), "Gather. Build. Break the Dread Citadel.", 19, TEXT, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	var lines := [
-		"You are Merlin. Click & hold (or WASD) to move; your spells cast on their own.",
-		"Mine gold and bank it at Camelot; its steward builds miners, towers and your army on its own.",
-		"Each wave, Camelot's host marches out to meet the Dread Army. The Dread grows stronger every era.",
+		"You are Merlin. Click & hold (or WASD) to move; spells cast on their own. Right-click to Blink.",
+		"Camelot is defended. Four hooded adepts follow you; trails lead to treasure in the maze pockets.",
+		"The War Lane burns forever. The Royal Roads are swift, but held by Dread garrisons.",
 		"Capture Ley Shrines for gold and waypoints (T). Hunt spellbooks, mini-bosses and loot.",
 		"Three Dread Wards shield the Citadel. Destroy them, face the Dread Lord, and end the siege.",
 	]
@@ -518,7 +642,7 @@ func _draw_title(vs: Vector2) -> void:
 		draw_rect(r, GOLD if sel or hover else Color(0.45, 0.4, 0.32), false, 2.0)
 		_str(r.position + Vector2(0, 32), "%d  %s" % [i + 1, d.name], 22, [Color(0.6, 0.9, 0.6), TEXT, Color(1, 0.5, 0.4)][i], HORIZONTAL_ALIGNMENT_CENTER, cw)
 		_str(r.position + Vector2(0, 62), d.desc, 13, DIM, HORIZONTAL_ALIGNMENT_CENTER, cw)
-	_str(Vector2(0, cy + ch + 46), "SPACE potion · T travel · M map · wheel zoom · P pause · F fullscreen · G graphics · N sound", 14, DIM, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
+	_str(Vector2(0, cy + ch + 46), "RMB / E blink · SPACE potion · T travel · M map · wheel zoom · P pause · F fullscreen · G graphics · N sound", 14, DIM, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 	if int(game.time * 2.0) % 2 == 0:
 		_str(Vector2(0, cy + ch + 76), "Press 1, 2 or 3 — or click a difficulty — to begin", 20, TEXT, HORIZONTAL_ALIGNMENT_CENTER, vs.x)
 

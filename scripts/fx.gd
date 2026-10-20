@@ -14,6 +14,7 @@ class Proj:
 	var radius := 0.0
 	var spin := 0.0
 	var dead := false
+	var hero := false      # cast by Merlin or his adepts (resisted by the Citadel)
 
 class Part:
 	var pos := Vector3.ZERO
@@ -49,6 +50,14 @@ class Slash:
 	var dur := 0.22
 	var col := Color.WHITE
 
+class Zone:
+	var pos := Vector3.ZERO
+	var r := 2.5
+	var dps := 10.0
+	var t := 0.0
+	var dur := 4.0
+	var tick := 0.0
+
 class Beam:
 	var a := Vector3.ZERO
 	var b := Vector3.ZERO
@@ -65,6 +74,8 @@ var rings: Array[Ring] = []
 var slashes: Array[Slash] = []
 var beams: Array[Beam] = []
 var numbers: Array = []   # [pos, text, color, t]
+var zones: Array[Zone] = []
+const HERO_CITADEL_MULT := 0.25
 var part_cap := 500
 
 var b_arrow: Batch
@@ -98,7 +109,7 @@ func setup(g: Game) -> void:
 
 # ------------------------------------------------------------- spawners
 
-func shoot(kind: String, from: Vector3, to: Vector3, speed: float, dmg: float, team: int, target: Unit = null, radius := 0.0) -> void:
+func shoot(kind: String, from: Vector3, to: Vector3, speed: float, dmg: float, team: int, target: Unit = null, radius := 0.0) -> Proj:
 	var p := Proj.new()
 	p.kind = kind
 	p.pos = from
@@ -109,10 +120,41 @@ func shoot(kind: String, from: Vector3, to: Vector3, speed: float, dmg: float, t
 	p.target = target
 	p.radius = radius
 	p.life = 2.5 if kind != "bolt" else 3.0
+	p.hero = kind == "frost"
 	projs.append(p)
 	match kind:
 		"fireball": game.sfx.play("fire", -4.0, 0.1)
 		"arrow", "earrow": game.sfx.play("arrow", -6.0, 0.08)
+	return p
+
+
+## Thorn Field: a patch of grasping briars that hurts and slows the Dread host.
+func zone(pos: Vector3, r: float, dps: float, dur: float) -> void:
+	var z := Zone.new()
+	z.pos = Vector3(pos.x, 0, pos.z)
+	z.r = r
+	z.dps = dps
+	z.dur = dur
+	zones.append(z)
+	burst(z.pos + Vector3(0, 0.3, 0), Color(0.4, 0.85, 0.3), 10, 3.0, 0.14, 3.0)
+
+
+func _update_zones(dt: float) -> void:
+	var i := zones.size() - 1
+	while i >= 0:
+		var z: Zone = zones[i]
+		z.t += dt
+		z.tick -= dt
+		if z.tick <= 0.0:
+			z.tick = 0.5
+			for u: Unit in game.horde.enemies_near(z.pos, z.r):
+				game.horde.hurt(u, z.dps * 0.5, Vector3.ZERO, 0.0, Color(0.55, 1.0, 0.45))
+				u.slow_t = maxf(u.slow_t, 1.0)
+			if randf() < 0.8:
+				sparkle(z.pos + Vector3(randf_range(-z.r, z.r) * 0.7, 0, randf_range(-z.r, z.r) * 0.7), Color(0.45, 0.9, 0.3), 2, 0.1)
+		if z.t >= z.dur:
+			zones.remove_at(i)
+		i -= 1
 
 
 func burst(pos: Vector3, col: Color, count: int, spd: float, size: float, up := 3.0) -> void:
@@ -213,6 +255,7 @@ func number(pos: Vector3, text: String, col: Color) -> void:
 func update(dt: float) -> void:
 	time += dt
 	_update_projs(dt)
+	_update_zones(dt)
 	_update_parts(dt)
 	_update_picks(dt)
 	var i := rings.size() - 1
@@ -251,7 +294,7 @@ func _update_projs(dt: float) -> void:
 			if p.kind == "fireball":
 				_explode(p)
 			continue
-		if p.kind == "bolt":
+		if p.kind == "bolt" or p.kind == "frost":
 			if p.target != null and p.target.alive:
 				var want := (p.target.pos + Vector3(0, 0.7, 0) - p.pos)
 				want.y = 0
@@ -267,12 +310,12 @@ func _update_projs(dt: float) -> void:
 		if p.kind == "arrow" or p.kind == "earrow":
 			p.vel.y -= dt * 2.0
 		# Walls stop everything except homing bolts.
-		if p.kind != "bolt" and p.pos.y < Maze.WALL_H + 0.3 and not maze.is_open_p(p.pos):
+		if p.kind != "bolt" and p.kind != "frost" and p.pos.y < Maze.WALL_H + 0.3 and not maze.is_open_p(p.pos):
 			# Let shots strike the fortress they are aimed at.
 			if p.team == 1 and (p.pos - maze.castle_pos).length() < 7.5:
 				game.castle.take_damage(p.dmg)
 			elif p.team == 0 and (p.pos - maze.citadel_pos).length() < 6.5:
-				game.damage_citadel(p.dmg)
+				game.damage_citadel(p.dmg * (HERO_CITADEL_MULT if p.hero else 1.0))
 			if p.kind == "fireball":
 				_explode(p)
 			else:
@@ -290,6 +333,10 @@ func _update_projs(dt: float) -> void:
 				var u: Unit = hits[0]
 				if p.kind == "fireball":
 					_explode(p)
+				elif p.kind == "frost":
+					horde.hurt(u, p.dmg, p.vel.normalized(), 1.0, Color(0.6, 0.9, 1.0))
+					u.slow_t = maxf(u.slow_t, 2.5)
+					burst(p.pos, Color(0.7, 0.95, 1.0), 5, 2.5, 0.1, 1.5)
 				else:
 					var col := Color(0.75, 0.85, 1.0) if p.kind == "bolt" else Color(1, 0.95, 0.7)
 					horde.hurt(u, p.dmg, p.vel.normalized(), 2.5, col)
@@ -299,7 +346,7 @@ func _update_projs(dt: float) -> void:
 			if (p.pos - game.maze.citadel_pos).length() < 5.0:
 				if p.kind == "fireball":
 					_explode(p)
-				game.damage_citadel(p.dmg)
+				game.damage_citadel(p.dmg * (HERO_CITADEL_MULT if p.hero else 1.0))
 				p.dead = true
 		else:
 			var hero := game.hero
@@ -329,7 +376,7 @@ func _explode(p: Proj) -> void:
 		d.y = 0
 		game.horde.hurt(u, p.dmg, d.normalized(), 4.0, Color(1, 0.6, 0.25))
 	if (p.pos - game.maze.citadel_pos).length() < 5.0 + r:
-		game.damage_citadel(p.dmg * 0.5)
+		game.damage_citadel(p.dmg * 0.5 * (HERO_CITADEL_MULT if p.hero else 1.0))
 	if (p.pos - game.hero.position).length() < 14.0:
 		game.shake = maxf(game.shake, 0.15)
 		game.sfx.play("explode", -4.0, 0.1)
@@ -409,6 +456,10 @@ func render() -> void:
 				b_orb.add(Basis.IDENTITY.scaled(Vector3(0.3, 0.3, 0.3)), p.pos, Color(1.0, 0.9, 0.5))
 				if randf() < 0.5:
 					sparkle(p.pos, Color(1.0, 0.45, 0.1), 1, 0.12)
+			"frost":
+				var sf := 0.28 + sin(p.spin) * 0.04
+				b_orb.add(Basis(Vector3.UP, p.spin).scaled(Vector3(sf, sf, sf)), p.pos, Color(0.55, 0.85, 1.0))
+				b_orb.add(Basis.IDENTITY.scaled(Vector3(0.14, 0.14, 0.14)), p.pos - p.vel.normalized() * 0.35, Color(0.3, 0.55, 0.8))
 			"dark":
 				var s3 := 0.5 + sin(p.spin) * 0.08
 				b_orb.add(Basis(Vector3.UP, p.spin).scaled(Vector3(s3, s3, s3)), p.pos, Color(0.9, 0.12, 0.2))
@@ -437,6 +488,10 @@ func render() -> void:
 		var rad := lerpf(r.r0, r.r1, 1.0 - (1.0 - k2) * (1.0 - k2))
 		var f := 1.0 - k2
 		b_ring.add(Basis.IDENTITY.scaled(Vector3(rad, 1, rad)), r.pos + Vector3(0, r.y, 0), Color(r.col.r * f, r.col.g * f, r.col.b * f))
+	for z in zones:
+		var f4 := clampf((z.dur - z.t) / 0.6, 0.0, 1.0) * (0.75 + 0.25 * sin(z.t * 8.0))
+		b_ring.add(Basis.IDENTITY.scaled(Vector3(z.r, 1, z.r)), z.pos + Vector3(0, 0.1, 0), Color(0.3 * f4, 0.75 * f4, 0.25 * f4))
+		b_ring.add(Basis.IDENTITY.scaled(Vector3(z.r * 0.6, 1, z.r * 0.6)), z.pos + Vector3(0, 0.12, 0), Color(0.2 * f4, 0.5 * f4, 0.15 * f4))
 	for s in slashes:
 		var k3 := s.t / s.dur
 		var f2 := 1.0 - k3

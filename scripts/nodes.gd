@@ -33,8 +33,8 @@ var b_glow: Batch
 
 func setup(g: Game) -> void:
 	game = g
-	b_gold = Batch.new(self, Models.ore_mesh(), 80, Geo.mat())
-	b_rubble = Batch.new(self, Models.stump_mesh(), 80, Geo.mat())
+	b_gold = Batch.new(self, Models.ore_mesh(), 140, Geo.mat())
+	b_rubble = Batch.new(self, Models.stump_mesh(), 140, Geo.mat())
 	b_book = Batch.new(self, Models.spellbook_mesh(), 16, Geo.mat())
 	b_glow = Batch.new(self, Models.ring_mesh(), 16, Geo.mat_add())
 	_place()
@@ -60,16 +60,30 @@ func _place() -> void:
 				continue
 			used[t] = true
 			_add(t, maze.region[Maze.idx(t)])
+	# Maze pocket rewards: spellbooks and rich gold seams at the heart of each labyrinth.
+	for pk in maze.pockets:
+		var rt: Vector2i = pk.reward
+		used[rt] = true
+		if pk.kind == "book":
+			var bk := Book.new()
+			bk.pos = Maze.tile_center(rt)
+			books.append(bk)
+		elif pk.kind == "gold":
+			_add(rt, maze.region[Maze.idx(rt)] + 0.8)
+			for d in [Vector2i(2, 0), Vector2i(-2, 0), Vector2i(0, 2), Vector2i(0, -2)]:
+				var t2: Vector2i = rt + d
+				if maze.is_open_t(t2) and (pk.rect as Rect2i).has_point(t2) and not used.has(t2):
+					used[t2] = true
+					_add(t2, maze.region[Maze.idx(t2)] + 0.8)
+	# Dead-end trail tips get a vein too, rewarding every branch.
 	var extra := 0
 	var tries := 0
-	while extra < 16 and tries < 500:
+	while extra < 14 and tries < 2000:
 		tries += 1
 		var t := Vector2i(rng.randi_range(2, Maze.G - 3), rng.randi_range(2, Maze.G - 3))
-		if not maze.is_open_t(t) or used.has(t):
+		if not maze.is_open_t(t) or used.has(t) or maze.lane[Maze.idx(t)] == Maze.L_WAR or maze.protect[Maze.idx(t)] == 1:
 			continue
 		if absi(t.x - maze.castle_tile.x) < 9 and absi(t.y - maze.castle_tile.y) < 9:
-			continue
-		if absi(t.x - maze.citadel_tile.x) < 8 and absi(t.y - maze.citadel_tile.y) < 8:
 			continue
 		var open := 0
 		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
@@ -80,34 +94,6 @@ func _place() -> void:
 		used[t] = true
 		_add(t, maze.region[Maze.idx(t)])
 		extra += 1
-	# Spellbooks: tucked into dead ends across the maze, more of them further out.
-	var placed := 0
-	tries = 0
-	while placed < 5 and tries < 2000:
-		tries += 1
-		var t := Vector2i(rng.randi_range(2, Maze.G - 3), rng.randi_range(2, Maze.G - 3))
-		if not maze.is_open_t(t) or used.has(t):
-			continue
-		var rg := maze.region[Maze.idx(t)]
-		if rg < 0.2 or rg > 0.9:
-			continue
-		var open := 0
-		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-			if maze.is_open_t(t + d):
-				open += 1
-		if open != 1:
-			continue
-		var far_ok := true
-		for b in books:
-			if (b.pos - Maze.tile_center(t)).length() < 24.0:
-				far_ok = false
-		if not far_ok:
-			continue
-		used[t] = true
-		var bk := Book.new()
-		bk.pos = Maze.tile_center(t)
-		books.append(bk)
-		placed += 1
 
 
 func _nearest_open(t: Vector2i) -> Vector2i:

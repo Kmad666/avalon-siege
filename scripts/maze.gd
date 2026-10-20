@@ -1,25 +1,38 @@
 class_name Maze
 extends RefCounted
-## The labyrinth: a braided maze with open glades, your castle in one corner and
-## the Dread Citadel in the opposite one. Also owns pathfinding (Dijkstra flow
-## fields over the tile grid) and circle-vs-wall collision, so no physics engine
-## is needed at all.
+## The realm. Camelot sits in one corner and the Dread Citadel in the opposite
+## one, joined by a single War Lane. Two Royal Roads run from Camelot to treasure
+## hubs in the far corners and the Kingsroad links those hubs across the middle;
+## the roads are fast but held by Dread garrisons. Between them lie solid forest
+## and ruin, threaded with branching trails that lead to glades and walled maze
+## pockets, each hiding a reward at its heart.
+## Also owns pathfinding (Dijkstra flow fields) and circle-vs-wall collision.
 
 const FLOOR := 0
 const WALL := 1
 const KEEP := 2      # the player's castle (solid)
 const CITADEL := 3   # the enemy fortress (solid)
 
-const CELLS := 34
-const G := CELLS * 2 + 1   # 69 tiles across
+const G := 85              # tiles across (~255 m)
 const T := 3.0             # tile size in metres
 const WALL_H := 1.5
+
+# lane[] values
+const L_NONE := 0
+const L_WAR := 1
+const L_ROAD := 2
+const L_TRAIL := 3
 
 var tiles := PackedByteArray()
 var wall_h := PackedFloat32Array()
 var region := PackedFloat32Array()  # 0 = near castle (green) .. 1 = near citadel (ashen)
 var explored := PackedByteArray()
-var rooms: Array = []               # Rect2i in tile coords
+var lane := PackedByteArray()
+var protect := PackedByteArray()    # 1 = inside a maze pocket (trails route around)
+var rooms: Array = []               # glades (Rect2i), hubs included
+var pockets: Array = []             # {rect, entrance, reward, kind}
+var hubs: Array[Vector2i] = []
+var garrisons: Array = []           # [Vector2i tile, road name]
 var rng := RandomNumberGenerator.new()
 
 var castle_tile := Vector2i(G - 5, G - 5)   # centre of the 3x3 keep
@@ -34,54 +47,54 @@ var to_citadel_next := PackedInt32Array()
 
 const NB := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
 	Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]
+const N4 := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
 
 func generate(seed_v: int) -> void:
 	rng.seed = seed_v
-	tiles.resize(G * G)
+	var n := G * G
+	tiles.resize(n)
 	tiles.fill(WALL)
-	explored.resize(G * G)
+	explored.resize(n)
 	explored.fill(0)
-	_carve_maze()
-	_braid(0.7)
-	_carve_rooms()
-	# Clearings around both fortresses.
-	_clear(Rect2i(G - 12, G - 12, 11, 11))
-	_clear(Rect2i(1, 1, 10, 10))
-	# A few broad avenues so armies can flow and the hero has room to kite.
-	for k in 5:
-		var y := rng.randi_range(6, CELLS - 6) * 2 + 1
-		var x0 := rng.randi_range(4, 14)
-		_clear(Rect2i(x0, y, rng.randi_range(8, 16), 1))
-		var x := rng.randi_range(6, CELLS - 6) * 2 + 1
-		var y0 := rng.randi_range(4, 14)
-		_clear(Rect2i(x, y0, 1, rng.randi_range(8, 16)))
-	for dy in range(-1, 2):
-		for dx in range(-1, 2):
-			_put_tile(castle_tile + Vector2i(dx, dy), KEEP)
-			_put_tile(citadel_tile + Vector2i(dx, dy), CITADEL)
-	# Archer tower plots around the castle are solid too.
-	for tt: Vector2i in Castle.TOWER_TILES:
-		_put_tile(castle_tile + tt, KEEP)
-	castle_pos = tile_center(castle_tile)
-	citadel_pos = tile_center(citadel_tile)
-	wall_h.resize(G * G)
-	region.resize(G * G)
+	lane.resize(n)
+	lane.fill(L_NONE)
+	protect.resize(n)
+	protect.fill(0)
+	region.resize(n)
+	wall_h.resize(n)
 	var span := float(G - 1) * 2.0
 	for y in G:
 		for x in G:
 			var i := y * G + x
-			# 0 at the castle corner, 1 at the citadel corner, wobbling a bit.
 			var r := 1.0 - float(x + y) / span
-			r += sin(x * 0.45 + y * 0.2) * 0.06 + cos(y * 0.37 - x * 0.15) * 0.06
+			r += sin(x * 0.37 + y * 0.17) * 0.05 + cos(y * 0.29 - x * 0.13) * 0.05
 			region[i] = clampf(r, 0.0, 1.0)
 			wall_h[i] = WALL_H * rng.randf_range(0.85, 1.2)
 			if region[i] > 0.7:
-				# Broken ruins: jagged heights.
 				wall_h[i] = WALL_H * rng.randf_range(0.45, 1.6)
-	to_castle_dist = PackedInt32Array()
-	var cs := _ring_sources(castle_tile)
-	var res := field_from(cs, 1 << 30)
+	_layout_lanes()
+	_place_pockets()
+	_place_glades()
+	_carve_lanes()
+	_carve_trails()
+	# Fortress clearings.
+	_clear(Rect2i(G - 13, G - 13, 12, 12))
+	_clear(Rect2i(1, 1, 11, 11))
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			_put_tile(castle_tile + Vector2i(dx, dy), KEEP)
+			_put_tile(citadel_tile + Vector2i(dx, dy), CITADEL)
+	for tt: Vector2i in Castle.TOWER_TILES:
+		_put_tile(castle_tile + tt, KEEP)
+	_cull_unreachable()
+	castle_pos = tile_center(castle_tile)
+	citadel_pos = tile_center(citadel_tile)
+	# The road network is common knowledge: reveal it on the map.
+	for i in n:
+		if lane[i] == L_WAR or lane[i] == L_ROAD:
+			explored[i] = 1
+	var res := field_from(_ring_sources(castle_tile), 1 << 30)
 	to_castle_dist = res[0]
 	to_castle_next = res[1]
 	var res2 := field_from(_ring_sources(citadel_tile), 1 << 30)
@@ -100,71 +113,368 @@ func _ring_sources(c: Vector2i) -> PackedInt32Array:
 	return out
 
 
-func _carve_maze() -> void:
+# ------------------------------------------------------------- layout
+
+var _segments: Array = []   # [Vector2 a, Vector2 b, half_width, lane value]
+
+
+func _layout_lanes() -> void:
+	var ne := Vector2i(G - 8, 7)
+	var sw := Vector2i(7, G - 8)
+	hubs = [ne, sw]
+	var c := Vector2(castle_tile)
+	var d := Vector2(citadel_tile)
+	_segments = [
+		[c, d, 2.7, L_WAR],                                   # the War Lane
+		[c, Vector2(G - 5, 8), 1.7, L_ROAD],                  # East Road
+		[c, Vector2(8, G - 5), 1.7, L_ROAD],                  # South Road
+		[Vector2(ne), Vector2(sw), 1.6, L_ROAD],              # Kingsroad
+	]
+	for s in _segments:
+		_paint_segment(s[0], s[1], s[2], s[3])
+	for h in hubs:
+		_paint_disc(Vector2(h), 5.5, L_ROAD)
+	# Garrisons: tough Dread outposts squatting on the roads.
+	var spots := [[c, Vector2(G - 5, 8), 0.42, "East Road"], [c, Vector2(G - 5, 8), 0.78, "East Road"],
+		[c, Vector2(8, G - 5), 0.42, "South Road"], [c, Vector2(8, G - 5), 0.78, "South Road"],
+		[Vector2(ne), Vector2(sw), 0.27, "Kingsroad"], [Vector2(ne), Vector2(sw), 0.73, "Kingsroad"]]
+	for sp in spots:
+		var p: Vector2 = (sp[0] as Vector2).lerp(sp[1], sp[2])
+		garrisons.append([Vector2i(roundi(p.x), roundi(p.y)), sp[3]])
+
+
+func _paint_segment(a: Vector2, b: Vector2, hw: float, v: int) -> void:
+	var x0 := maxi(1, int(minf(a.x, b.x) - hw - 1))
+	var x1 := mini(G - 2, int(maxf(a.x, b.x) + hw + 1))
+	var y0 := maxi(1, int(minf(a.y, b.y) - hw - 1))
+	var y1 := mini(G - 2, int(maxf(a.y, b.y) + hw + 1))
+	var ab := b - a
+	var l2 := ab.length_squared()
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			var p := Vector2(x, y)
+			var t := clampf((p - a).dot(ab) / l2, 0.0, 1.0)
+			# A little wobble so roads don't look ruled.
+			var wob := sin(t * 23.0 + a.x) * 0.45
+			if p.distance_to(a + ab * t) <= hw + wob:
+				var i := y * G + x
+				if lane[i] == L_NONE or v < lane[i]:
+					lane[i] = v
+
+
+func _paint_disc(c: Vector2, r: float, v: int) -> void:
+	for y in range(maxi(1, int(c.y - r - 1)), mini(G - 1, int(c.y + r + 2))):
+		for x in range(maxi(1, int(c.x - r - 1)), mini(G - 1, int(c.x + r + 2))):
+			if Vector2(x, y).distance_to(c) <= r:
+				var i := y * G + x
+				if lane[i] == L_NONE:
+					lane[i] = v
+
+
+## True if any lane tile lies within `m` tiles of rect r.
+func _near_lane(r: Rect2i, m: int) -> bool:
+	for y in range(maxi(0, r.position.y - m), mini(G, r.end.y + m)):
+		for x in range(maxi(0, r.position.x - m), mini(G, r.end.x + m)):
+			if lane[y * G + x] != L_NONE:
+				return true
+	return false
+
+
+func _blocked_rect(r: Rect2i) -> bool:
+	if r.position.x < 2 or r.position.y < 2 or r.end.x > G - 2 or r.end.y > G - 2:
+		return true
+	if r.intersects(Rect2i(G - 16, G - 16, 16, 16)) or r.intersects(Rect2i(0, 0, 15, 15)):
+		return true
+	return false
+
+
+func _place_pockets() -> void:
+	var tries := 0
+	while pockets.size() < 13 and tries < 3000:
+		tries += 1
+		var w := rng.randi_range(4, 7) * 2 + 1
+		var h := rng.randi_range(4, 7) * 2 + 1
+		var x := rng.randi_range(2, G - w - 3)
+		var y := rng.randi_range(2, G - h - 3)
+		var r := Rect2i(x, y, w, h)
+		if _blocked_rect(r) or _near_lane(r, 2):
+			continue
+		var ok := true
+		for p in pockets:
+			if r.grow(3).intersects(p.rect):
+				ok = false
+				break
+		if not ok:
+			continue
+		pockets.append(_carve_pocket(r))
+	# Rewards: five spellbooks, the rest split between treasure and gold.
+	var order := range(pockets.size())
+	order.shuffle()
+	for k in order.size():
+		var pk: Dictionary = pockets[order[k]]
+		pk.kind = "book" if k < 5 else ("chest" if k % 2 == 1 else "gold")
+
+
+## A walled labyrinth with one entrance; the reward sits at its deepest point.
+func _carve_pocket(r: Rect2i) -> Dictionary:
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			protect[y * G + x] = 1
+	var cw := (r.size.x - 1) / 2
+	var ch := (r.size.y - 1) / 2
 	var visited := PackedByteArray()
-	visited.resize(CELLS * CELLS)
-	var stack: Array[Vector2i] = [Vector2i(CELLS - 1, CELLS - 1)]
-	visited[(CELLS - 1) * CELLS + CELLS - 1] = 1
-	_put_tile(Vector2i(CELLS * 2 - 1, CELLS * 2 - 1), FLOOR)
-	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	visited.resize(cw * ch)
+	var start := Vector2i(rng.randi_range(0, cw - 1), rng.randi_range(0, ch - 1))
+	var stack: Array[Vector2i] = [start]
+	visited[start.y * cw + start.x] = 1
+	var origin := r.position + Vector2i(1, 1)
+	_put_tile(origin + start * 2, FLOOR)
 	while not stack.is_empty():
 		var c: Vector2i = stack.back()
 		var opts: Array[Vector2i] = []
-		for d in dirs:
-			var n: Vector2i = c + d
-			if n.x >= 0 and n.y >= 0 and n.x < CELLS and n.y < CELLS and visited[n.y * CELLS + n.x] == 0:
+		for d in N4:
+			var nn: Vector2i = c + d
+			if nn.x >= 0 and nn.y >= 0 and nn.x < cw and nn.y < ch and visited[nn.y * cw + nn.x] == 0:
 				opts.append(d)
 		if opts.is_empty():
 			stack.pop_back()
 			continue
-		var d: Vector2i = opts[rng.randi() % opts.size()]
-		var n2: Vector2i = c + d
-		visited[n2.y * CELLS + n2.x] = 1
-		_put_tile(Vector2i(c.x * 2 + 1 + d.x, c.y * 2 + 1 + d.y), FLOOR)
-		_put_tile(Vector2i(n2.x * 2 + 1, n2.y * 2 + 1), FLOOR)
+		var dd: Vector2i = opts[rng.randi() % opts.size()]
+		var n2: Vector2i = c + dd
+		visited[n2.y * cw + n2.x] = 1
+		_put_tile(origin + c * 2 + dd, FLOOR)
+		_put_tile(origin + n2 * 2, FLOOR)
 		stack.append(n2)
+	# A few loops so it isn't a pure tree.
+	for k in (cw * ch) / 6:
+		var t := origin + Vector2i(rng.randi_range(0, cw - 1) * 2, rng.randi_range(0, ch - 1) * 2)
+		var dd2: Vector2i = N4[rng.randi() % 4]
+		var wt := t + dd2
+		if r.grow(-1).has_point(wt) and tiles[idx(wt)] == WALL:
+			_put_tile(wt, FLOOR)
+	# Entrance on the side facing the nearest lane.
+	var centre := r.get_center()
+	var best := Vector2i(-1, -1)
+	var bd := INF
+	for y in range(maxi(1, centre.y - 30), mini(G - 1, centre.y + 30), 2):
+		for x in range(maxi(1, centre.x - 30), mini(G - 1, centre.x + 30), 2):
+			if lane[y * G + x] != L_NONE:
+				var dist := Vector2(x - centre.x, y - centre.y).length()
+				if dist < bd:
+					bd = dist
+					best = Vector2i(x, y)
+	var dir := Vector2(best - centre) if best.x >= 0 else Vector2(1, 1)
+	var ent: Vector2i
+	if absf(dir.x) * r.size.y > absf(dir.y) * r.size.x:
+		var ex := r.end.x - 1 if dir.x > 0 else r.position.x
+		var cy := r.position.y + 1 + clampi(roundi((centre.y - r.position.y - 1) / 2.0), 0, ch - 1) * 2
+		ent = Vector2i(ex, cy)
+	else:
+		var ey := r.end.y - 1 if dir.y > 0 else r.position.y
+		var cx := r.position.x + 1 + clampi(roundi((centre.x - r.position.x - 1) / 2.0), 0, cw - 1) * 2
+		ent = Vector2i(cx, ey)
+	_put_tile(ent, FLOOR)
+	# Reward: the floor tile furthest from the entrance.
+	var far := ent
+	var dist_map := {ent: 0}
+	var q: Array[Vector2i] = [ent]
+	var qi := 0
+	while qi < q.size():
+		var c2: Vector2i = q[qi]
+		qi += 1
+		for d in N4:
+			var nb: Vector2i = c2 + d
+			if r.has_point(nb) and tiles[idx(nb)] == FLOOR and not dist_map.has(nb):
+				dist_map[nb] = dist_map[c2] + 1
+				q.append(nb)
+				if dist_map[nb] > dist_map[far]:
+					far = nb
+	return {"rect": r, "entrance": ent, "reward": far, "kind": "gold"}
 
 
-## Knock out walls at dead ends so the maze has loops (no hopeless cul-de-sacs).
-func _braid(chance: float) -> void:
-	for cy in CELLS:
-		for cx in CELLS:
-			var t := Vector2i(cx * 2 + 1, cy * 2 + 1)
-			var walls: Array[Vector2i] = []
-			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-				var w: Vector2i = t + d
-				if w.x > 0 and w.y > 0 and w.x < G - 1 and w.y < G - 1 and tiles[idx(w)] == WALL:
-					walls.append(w)
-			if walls.size() >= 3 and rng.randf() < chance:
-				_put_tile(walls[rng.randi() % walls.size()], FLOOR)
-
-
-func _carve_rooms() -> void:
+func _place_glades() -> void:
 	var tries := 0
-	while rooms.size() < 34 and tries < 700:
+	while rooms.size() < 30 and tries < 4000:
 		tries += 1
-		var w := rng.randi_range(3, 6) * 2 - 1
-		var h := rng.randi_range(3, 6) * 2 - 1
-		var x := rng.randi_range(1, CELLS - w / 2 - 2) * 2 + 1
-		var y := rng.randi_range(1, CELLS - h / 2 - 2) * 2 + 1
-		var r := Rect2i(x, y, w, h)
-		if r.end.x >= G - 1 or r.end.y >= G - 1:
-			continue
-		# Keep rooms out of the fortress clearings.
-		if r.intersects(Rect2i(G - 14, G - 14, 14, 14)) or r.intersects(Rect2i(0, 0, 13, 13)):
+		var w := rng.randi_range(5, 9)
+		var h := rng.randi_range(5, 9)
+		var r := Rect2i(rng.randi_range(2, G - w - 3), rng.randi_range(2, G - h - 3), w, h)
+		if _blocked_rect(r) or _near_lane(r, 1):
 			continue
 		var ok := true
+		for p in pockets:
+			if r.grow(2).intersects(p.rect):
+				ok = false
+				break
 		for o in rooms:
-			if r.grow(2).intersects(o):
+			if r.grow(3).intersects(o):
 				ok = false
 				break
 		if not ok:
 			continue
 		rooms.append(r)
 		_clear(r)
-		# A pillar or two so glades don't feel empty.
-		if w >= 7 and h >= 7 and rng.randf() < 0.6:
-			_put_tile(Vector2i(x + w / 2, y + h / 2), WALL)
+		if w >= 8 and h >= 8 and rng.randf() < 0.5:
+			_put_tile(r.get_center(), WALL)
+	for h2 in hubs:
+		rooms.append(Rect2i(h2 - Vector2i(3, 3), Vector2i(7, 7)))
+
+
+func _carve_lanes() -> void:
+	for i in G * G:
+		if lane[i] != L_NONE and protect[i] == 0:
+			tiles[i] = FLOOR
+
+
+## Branching trails: each glade and pocket entrance (nearest first) is joined to
+## the existing network by a winding path, so trails fork off the roads like
+## branches off a trunk.
+func _carve_trails() -> void:
+	var net := PackedByteArray()
+	net.resize(G * G)
+	for i in G * G:
+		if lane[i] != L_NONE:
+			net[i] = 1
+	var noise := FastNoiseLite.new()
+	noise.seed = rng.randi()
+	noise.frequency = 0.09
+	var cost := PackedByteArray()
+	cost.resize(G * G)
+	for y in G:
+		for x in G:
+			cost[y * G + x] = 1 + int((noise.get_noise_2d(x, y) + 1.0) * 2.0)
+	var targets: Array = []
+	for r: Rect2i in rooms:
+		targets.append(r.get_center())
+	for p in pockets:
+		targets.append(p.entrance)
+	# Nearest-to-a-road first, so later trails can branch off earlier ones.
+	targets.sort_custom(func(a, b): return _lane_dist(a) < _lane_dist(b))
+	for t: Vector2i in targets:
+		if net[idx(t)] == 1:
+			continue
+		_trail_from(t, net, cost, 0)
+		_mark_area(t, net)
+	# A few extra links make loops, so not every branch is a dead end.
+	for k in 12:
+		var t2: Vector2i = targets[rng.randi() % targets.size()]
+		_trail_from(t2, net, cost, 14)
+
+
+func _lane_dist(t: Vector2i) -> float:
+	var bd := 1e9
+	for y in range(maxi(1, t.y - 40), mini(G - 1, t.y + 40), 3):
+		for x in range(maxi(1, t.x - 40), mini(G - 1, t.x + 40), 3):
+			if lane[y * G + x] != L_NONE:
+				bd = minf(bd, Vector2(x - t.x, y - t.y).length())
+	return bd
+
+
+func _mark_area(t: Vector2i, net: PackedByteArray) -> void:
+	for r: Rect2i in rooms:
+		if r.has_point(t):
+			for y in range(r.position.y, r.end.y):
+				for x in range(r.position.x, r.end.x):
+					net[y * G + x] = 1
+	net[idx(t)] = 1
+
+
+## Dijkstra from `start` until it reaches a network tile (at least `min_d`
+## tiles away), then carve that path two tiles wide.
+func _trail_from(start: Vector2i, net: PackedByteArray, cost: PackedByteArray, min_d: int) -> void:
+	var dist := {}
+	var prev := {}
+	var buckets: Array = []
+	for b in 6:
+		buckets.append([])
+	dist[start] = 0
+	(buckets[0] as Array).append(start)
+	var cur := 0
+	var found := Vector2i(-1, -1)
+	var pending := 1
+	var guard := 0
+	while pending > 0 and guard < 20000:
+		guard += 1
+		var bucket: Array = buckets[cur % 6]
+		if bucket.is_empty():
+			cur += 1
+			continue
+		var t: Vector2i = bucket.pop_back()
+		pending -= 1
+		if dist[t] != cur:
+			continue
+		if net[idx(t)] == 1 and t != start and Vector2(t - start).length() >= min_d:
+			found = t
+			break
+		for d in N4:
+			var nb: Vector2i = t + d
+			if nb.x < 2 or nb.y < 2 or nb.x > G - 3 or nb.y > G - 3:
+				continue
+			var ni := idx(nb)
+			if protect[ni] == 1 and tiles[ni] != FLOOR:
+				continue
+			var nd: int = cur + cost[ni]
+			if nd < dist.get(nb, 1 << 30):
+				dist[nb] = nd
+				prev[nb] = t
+				(buckets[nd % 6] as Array).append(nb)
+				pending += 1
+	if found.x < 0:
+		return
+	var t2 := found
+	while t2 != start:
+		_carve_trail_tile(t2, net)
+		t2 = prev[t2]
+	_carve_trail_tile(start, net)
+
+
+func _carve_trail_tile(t: Vector2i, net: PackedByteArray) -> void:
+	for o in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1)]:
+		var p: Vector2i = t + o
+		if p.x < 1 or p.y < 1 or p.x > G - 2 or p.y > G - 2:
+			continue
+		var i := idx(p)
+		if protect[i] == 1:
+			continue
+		tiles[i] = FLOOR
+		net[i] = 1
+		if lane[i] == L_NONE:
+			lane[i] = L_TRAIL
+	var i0 := idx(t)
+	tiles[i0] = FLOOR
+	net[i0] = 1
+
+
+## Any floor not reachable from Camelot is sealed back into wall.
+func _cull_unreachable() -> void:
+	var seen := PackedByteArray()
+	seen.resize(G * G)
+	var q := PackedInt32Array()
+	var s := idx(castle_tile + Vector2i(-3, -3))
+	for k in [castle_tile + Vector2i(-3, -3), castle_tile + Vector2i(-4, -4), castle_tile + Vector2i(-5, 0)]:
+		if is_open_t(k):
+			s = idx(k)
+			break
+	q.append(s)
+	seen[s] = 1
+	var qi := 0
+	while qi < q.size():
+		var i := q[qi]
+		qi += 1
+		var x := i % G
+		var y := i / G
+		for d in N4:
+			var nx: int = x + d.x
+			var ny: int = y + d.y
+			if nx < 0 or ny < 0 or nx >= G or ny >= G:
+				continue
+			var j := ny * G + nx
+			if seen[j] == 0 and tiles[j] == FLOOR:
+				seen[j] = 1
+				q.append(j)
+	for i in G * G:
+		if tiles[i] == FLOOR and seen[i] == 0:
+			tiles[i] = WALL
 
 
 func _clear(r: Rect2i) -> void:
@@ -176,6 +486,10 @@ func _clear(r: Rect2i) -> void:
 func _put_tile(t: Vector2i, v: int) -> void:
 	if t.x >= 0 and t.y >= 0 and t.x < G and t.y < G:
 		tiles[t.y * G + t.x] = v
+
+
+func lane_at(p: Vector3) -> int:
+	return lane[idx(tile_of(p))]
 
 
 static func idx(t: Vector2i) -> int:
@@ -362,43 +676,66 @@ func region_color(rg: float, green: Color, mid: Color, ash: Color) -> Color:
 
 # ---------------------------------------------------------------- meshes
 
-## Ground, walls and decorations merged into a handful of meshes.
+const CHUNK := 17
+
+## Ground, walls and decorations, merged per 17x17-tile chunk so the camera
+## culls everything off-screen.
 func build_meshes(parent: Node3D) -> void:
-	var ground := Geo.new()
-	var walls := Geo.new()
-	var trees: Array[Transform3D] = []
-	var dead_trees: Array[Transform3D] = []
-	var deco := rng
-	# Far skirt so the map edge isn't a void.
-	ground.quad(Vector3(-60, -0.05, -60), Vector3(-60, -0.05, G * T + 60), Vector3(G * T + 60, -0.05, G * T + 60), Vector3(G * T + 60, -0.05, -60), Color(0.13, 0.17, 0.11))
-	for y in G:
-		for x in G:
-			var i := y * G + x
-			var rg := region[i]
-			var x0 := x * T
-			var z0 := y * T
-			var tt := tiles[i]
-			if tt == FLOOR or tt == KEEP or tt == CITADEL:
-				var base := region_color(rg, Color(0.36, 0.55, 0.27), Color(0.47, 0.47, 0.3), Color(0.33, 0.29, 0.27))
-				if tt == KEEP or _near(Vector2i(x, y), castle_tile, 5):
-					base = Color(0.52, 0.5, 0.42) if (x + y) % 2 == 0 else Color(0.48, 0.46, 0.39)
-				elif tt == CITADEL or _near(Vector2i(x, y), citadel_tile, 4):
-					base = Color(0.2, 0.17, 0.18) if (x + y) % 2 == 0 else Color(0.24, 0.19, 0.19)
-				var c := base.lightened(deco.randf_range(-0.04, 0.05))
-				# Split the tile in two triangles with slightly different tones = faceted look.
-				ground.tri(Vector3(x0, 0, z0), Vector3(x0 + T, 0, z0), Vector3(x0, 0, z0 + T), c)
-				ground.tri(Vector3(x0 + T, 0, z0), Vector3(x0 + T, 0, z0 + T), Vector3(x0, 0, z0 + T), c.darkened(0.04))
-				if tt == FLOOR and not _near(Vector2i(x, y), castle_tile, 5):
-					_decorate(ground, Vector3(x0, 0, z0), rg)
-			else:
-				_wall_tile(walls, x, y, rg, trees, dead_trees)
-	for g in [ground, walls]:
-		var mi := MeshInstance3D.new()
-		mi.mesh = g.mesh()
-		Geo.apply(mi)
-		parent.add_child(mi)
-	_tree_multimesh(parent, trees, Models.tree_mesh())
-	_tree_multimesh(parent, dead_trees, Models.dead_tree_mesh())
+	var skirt := Geo.new()
+	skirt.quad(Vector3(-60, -0.05, -60), Vector3(-60, -0.05, G * T + 60), Vector3(G * T + 60, -0.05, G * T + 60), Vector3(G * T + 60, -0.05, -60), Color(0.13, 0.17, 0.11))
+	var smi := MeshInstance3D.new()
+	smi.mesh = skirt.mesh()
+	Geo.apply(smi)
+	parent.add_child(smi)
+	var nc := (G + CHUNK - 1) / CHUNK
+	for cy in nc:
+		for cx in nc:
+			var ground := Geo.new()
+			var walls := Geo.new()
+			var trees: Array[Transform3D] = []
+			var dead_trees: Array[Transform3D] = []
+			for y in range(cy * CHUNK, mini(G, (cy + 1) * CHUNK)):
+				for x in range(cx * CHUNK, mini(G, (cx + 1) * CHUNK)):
+					_build_tile(x, y, ground, walls, trees, dead_trees)
+			for gg in [ground, walls]:
+				if gg.is_empty():
+					continue
+				var mi := MeshInstance3D.new()
+				mi.mesh = gg.mesh()
+				Geo.apply(mi)
+				parent.add_child(mi)
+			_tree_multimesh(parent, trees, Models.tree_mesh())
+			_tree_multimesh(parent, dead_trees, Models.dead_tree_mesh())
+
+
+func _build_tile(x: int, y: int, ground: Geo, walls: Geo, trees: Array[Transform3D], dead_trees: Array[Transform3D]) -> void:
+	var i := y * G + x
+	var rg := region[i]
+	var x0 := x * T
+	var z0 := y * T
+	var tt := tiles[i]
+	if tt == FLOOR or tt == KEEP or tt == CITADEL:
+		var base := region_color(rg, Color(0.36, 0.55, 0.27), Color(0.47, 0.47, 0.3), Color(0.33, 0.29, 0.27))
+		var ln := lane[i]
+		if ln == L_WAR:
+			base = Color(0.42, 0.36, 0.28).lerp(Color(0.3, 0.24, 0.22), rg)     # trampled war-mud
+		elif ln == L_ROAD:
+			base = Color(0.6, 0.56, 0.46).lerp(Color(0.42, 0.38, 0.36), rg)     # cobbled road
+		elif ln == L_TRAIL:
+			base = base.lerp(Color(0.5, 0.42, 0.3), 0.45)                       # dirt trail
+		if tt == KEEP or _near(Vector2i(x, y), castle_tile, 5):
+			base = Color(0.52, 0.5, 0.42) if (x + y) % 2 == 0 else Color(0.48, 0.46, 0.39)
+		elif tt == CITADEL or _near(Vector2i(x, y), citadel_tile, 4):
+			base = Color(0.2, 0.17, 0.18) if (x + y) % 2 == 0 else Color(0.24, 0.19, 0.19)
+		var c := base.lightened(rng.randf_range(-0.04, 0.05))
+		if ln == L_ROAD and (x + y) % 2 == 0:
+			c = c.darkened(0.05)
+		ground.tri(Vector3(x0, 0, z0), Vector3(x0 + T, 0, z0), Vector3(x0, 0, z0 + T), c)
+		ground.tri(Vector3(x0 + T, 0, z0), Vector3(x0 + T, 0, z0 + T), Vector3(x0, 0, z0 + T), c.darkened(0.04))
+		if tt == FLOOR and not _near(Vector2i(x, y), castle_tile, 5) and ln != L_ROAD and ln != L_WAR:
+			_decorate(ground, Vector3(x0, 0, z0), rg)
+	else:
+		_wall_tile(walls, x, y, rg, trees, dead_trees)
 
 
 func _near(a: Vector2i, b: Vector2i, r: int) -> bool:

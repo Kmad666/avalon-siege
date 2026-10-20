@@ -124,7 +124,9 @@ func _place_wards() -> void:
 		var b := game.maze.citadel_pos + Vector3(0, 10.0, 0)
 		var beam := MeshInstance3D.new()
 		beam.mesh = Models.cube_mesh()
-		beam.material_override = Geo.mat_add()
+		var bm: StandardMaterial3D = Geo.mat_add().duplicate()
+		bm.albedo_color = Color(0.55, 0.06, 0.1)
+		beam.material_override = bm
 		var d := b - a
 		var z := d.normalized()
 		var x := z.cross(Vector3.UP).normalized()
@@ -239,7 +241,7 @@ func update(dt: float) -> void:
 		var p := 0.12 + 0.05 * sin(game.time * 2.0)
 		shield.visible = true
 		shield.rotation.y += dt * 0.2
-		var col := Color(0.9 * p * 3.0, 0.15 * p * 3.0, 0.2 * p * 3.0)
+		var col := Color(0.9 * p * 1.5, 0.15 * p * 1.5, 0.25 * p * 1.5)
 		(shield.material_override as StandardMaterial3D).albedo_color = col
 	else:
 		shield.visible = false

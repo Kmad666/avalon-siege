@@ -32,6 +32,12 @@ var diff := 1.0
 var lord_spawned := false
 var dread_lord: Unit = null
 var _shield_msg_t := 0.0
+var fog: Fog
+var lane_t := 10.0
+var _hud_t := 0.0
+var _pulse_t := 4.0
+var garrison_caps: Array[Unit] = []
+const VISION := 11.0
 var castle: Castle
 var hero: Hero
 var hud: HUD
@@ -145,10 +151,16 @@ func _ready() -> void:
 	hero.position = maze.castle_pos + Vector3(-1.5, 0, -6.5)
 	hero.position = maze.collide(hero.position, 0.42)
 	hero.facing = PI * 1.25
+	castle.fortify()
+	hero.recompute()
+	# The Circle of Avalon: four hooded adepts sworn to follow Merlin.
+	for i in Horde.ADEPTS.size():
+		horde.add_adept(Horde.ADEPTS[i], hero.position + Vector3(1.5 - i, 0, 2.0), i)
 	_build_citadel()
 	_spawn_camps()
 	items.setup(self)
 	marks.setup(self)
+	_place_pocket_treasure()
 	camera = Camera3D.new()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = cam_size
@@ -162,6 +174,12 @@ func _ready() -> void:
 	add_child(layer)
 	layer.add_child(hud)
 	hud.setup(self)
+	fog = Fog.new()
+	var fog_layer := CanvasLayer.new()
+	fog_layer.layer = 0
+	add_child(fog_layer)
+	fog_layer.add_child(fog)
+	move_child(fog_layer, layer.get_index())
 	_apply_quality()
 	if sim:
 		start()
@@ -205,7 +223,7 @@ func _parse_args() -> void:
 			ui_test = true
 		elif a == "--war":
 			war = true
-			shot_times = [20.0, 35.0, 50.0, 65.0, 80.0, 100.0]
+			shot_times = [3.0, 40.0, 90.0, 150.0, 240.0]
 			autopilot = true
 		elif a == "--defend":
 			defend = true
@@ -279,7 +297,7 @@ func _spawn_camps() -> void:
 		if absi(c.x - maze.castle_tile.x) < 11 and absi(c.y - maze.castle_tile.y) < 11:
 			continue
 		var rg := maze.region[Maze.idx(c)]
-		var count := 3 + int(rg * 5.0) + randi_range(0, 2)
+		var count := 6 + int(rg * 8.0) + randi_range(0, 3)
 		var power := 1.0 + rg * 1.4
 		var field: Array = maze.field_from(PackedInt32Array([Maze.idx(maze.random_floor_in(room))]), 500)
 		horde.camp_fields[cid] = field[1]
@@ -301,6 +319,71 @@ func _spawn_camps() -> void:
 				u.camp_id = cid
 		cid += 1
 	_spawn_minibosses()
+	_spawn_garrisons()
+	_spawn_pocket_lurkers()
+
+
+## Dread garrisons squat on the Royal Roads and the Kingsroad: fast routes,
+## but only for a Merlin strong enough to break them.
+func _spawn_garrisons() -> void:
+	var kinds := ["orc", "orc", "wolf", "skeleton", "shaman", "orc", "skeleton", "wolf", "ogre", "necro", "orc"]
+	for i in maze.garrisons.size():
+		var gt: Vector2i = maze.garrisons[i][0]
+		if not maze.is_open_t(gt):
+			continue
+		var gp := Maze.tile_center(gt)
+		var rg := maze.region[Maze.idx(gt)]
+		var power := 2.6 + rg * 2.4
+		var cid := 200 + i
+		horde.camp_fields[cid] = maze.field_from(PackedInt32Array([Maze.idx(gt)]), 400)[1]
+		for k in kinds.size():
+			var p := maze.collide(gp + Vector3(randf_range(-4, 4), 0, randf_range(-4, 4)), 0.6)
+			var u := horde.spawn(kinds[k], p, "camp", power, false)
+			if u != null:
+				u.camp_id = cid
+				u.home = p
+		var cap := horde.spawn("dark_knight", gp, "camp", power * 0.55, true)
+		if cap != null:
+			cap.camp_id = cid
+			cap.title = "Garrison Captain — %s" % maze.garrisons[i][1]
+			cap.xp = 30
+			garrison_caps.append(cap)
+		var deco := MeshInstance3D.new()
+		deco.mesh = Models.dread_camp_mesh()
+		Geo.apply(deco)
+		deco.position = gp
+		add_child(deco)
+
+
+## A few lurkers haunt every maze pocket.
+func _spawn_pocket_lurkers() -> void:
+	for k in maze.pockets.size():
+		var pk: Dictionary = maze.pockets[k]
+		var r: Rect2i = pk.rect
+		var rt: Vector2i = pk.reward
+		var rg := maze.region[Maze.idx(rt)]
+		var cid := 300 + k
+		horde.camp_fields[cid] = maze.field_from(PackedInt32Array([Maze.idx(rt)]), 400)[1]
+		for n in 6 + int(rg * 6.0):
+			var t := maze.random_floor_in(r)
+			if t.x < 0:
+				continue
+			var kind: String = ["goblin", "wolf", "skeleton"][randi() % 3] if rg > 0.4 else ["goblin", "goblin", "wolf"][randi() % 3]
+			var u := horde.spawn(kind, Maze.tile_center(t), "camp", 1.0 + rg * 1.4, n == 0 and randf() < 0.5)
+			if u != null:
+				u.camp_id = cid
+
+
+## Treasure chests at the heart of "chest" pockets, and a hoard at each hub.
+func _place_pocket_treasure() -> void:
+	for pk in maze.pockets:
+		if pk.kind != "chest":
+			continue
+		var rt: Vector2i = pk.reward
+		var rg := maze.region[Maze.idx(rt)]
+		items.drop(Items.make(2 + int(rg * 8.0), 3 if randf() < 0.3 + rg * 0.3 else 2), Maze.tile_center(rt))
+	for h: Vector2i in maze.hubs:
+		items.drop(Items.make(7, 3), Maze.tile_center(h))
 
 
 ## Six named mini-bosses lair in glades spread across the maze, toughest furthest out.
@@ -315,8 +398,27 @@ func _spawn_minibosses() -> void:
 	cands.sort_custom(func(a, b): return a[0] < b[0])
 	if cands.is_empty():
 		return
-	for i in MINIBOSSES.size():
-		var pick: Array = cands[mini(cands.size() - 1, int(float(i) / MINIBOSSES.size() * cands.size() + cands.size() * 0.1))]
+	var hub_c: Array = []
+	var glade_c: Array = []
+	for c2 in cands:
+		var at_hub := false
+		for h: Vector2i in maze.hubs:
+			if (c2[1] as Rect2i).has_point(h):
+				at_hub = true
+		if at_hub:
+			hub_c.append(c2)
+		else:
+			glade_c.append(c2)
+	var order := [[0, -1], [1, -1], [2, -1], [3, 0], [4, 1], [5, -1]]
+	var gi := 0
+	for oi in order:
+		var i: int = oi[0]
+		var pick: Array
+		if oi[1] >= 0 and oi[1] < hub_c.size():
+			pick = hub_c[oi[1]]
+		else:
+			pick = glade_c[mini(glade_c.size() - 1, int(float(gi) / 4.0 * glade_c.size() + glade_c.size() * 0.15))]
+			gi += 1
 		var room: Rect2i = pick[1]
 		var def: Dictionary = MINIBOSSES[i]
 		var t := maze.random_floor_in(room)
@@ -353,7 +455,7 @@ func set_difficulty(i: int) -> void:
 
 func start() -> void:
 	state = "play"
-	hud.message("Camelot builds on its own as gold flows in. Go mine, fight, capture shrines and loot!", 8.0, Color(1, 0.9, 0.6))
+	hud.message("Camelot is defended — the adventure is yours. Follow the trails to treasure. Right-click to Blink.", 8.0, Color(1, 0.9, 0.6))
 
 
 # ------------------------------------------------------------- main loop
@@ -398,7 +500,12 @@ func _process(delta: float) -> void:
 	items.render()
 	_animate_citadel(dt)
 	_update_camera(dt, false)
-	hud.queue_redraw()
+	fog.track(camera, (hero.position if hero.alive else maze.castle_pos) + Vector3(0, 0.6, 0), VISION, time)
+	# The HUD keeps its last drawing between redraws; 30 per second is plenty.
+	_hud_t -= delta
+	if _hud_t <= 0.0 or state != "play" or fps_now < 40.0:
+		_hud_t = 1.0 / 30.0
+		hud.queue_redraw()
 	t = _p("r_misc", t)
 	_shots()
 
@@ -444,7 +551,7 @@ func _explore(p: Vector3) -> void:
 				var i := y * Maze.G + x
 				if maze.explored[i] == 0:
 					maze.explored[i] = 1
-					hud.minimap_dirty = true
+					hud.new_tiles.append(i)
 
 
 # ------------------------------------------------------------- flow fields
@@ -543,6 +650,7 @@ func _update_waves(dt: float) -> void:
 			var cg := _castle_gates()
 			var ap: Vector3 = Maze.tile_center(cg[randi() % cg.size()]) + Vector3(randf_range(-0.8, 0.8), 0, randf_range(-0.8, 0.8))
 			horde.spawn_soldier(a[1], ap, a[2])
+	_update_lane(dt)
 	if not spawn_queue.is_empty():
 		spawn_t -= dt
 		if spawn_t <= 0.0:
@@ -552,6 +660,52 @@ func _update_waves(dt: float) -> void:
 			var p: Vector3 = Maze.tile_center(gates[randi() % gates.size()])
 			p += Vector3(randf_range(-0.8, 0.8), 0, randf_range(-0.8, 0.8))
 			horde.spawn(s[1], p, "march", s[2], s[3])
+
+
+## The War Lane never sleeps: both sides feed fresh squads into it, so there
+## is always a battle raging between the two fortresses.
+func _update_lane(dt: float) -> void:
+	lane_t -= dt
+	if lane_t > 0.0:
+		return
+	lane_t = 6.0
+	var dm := 0
+	for u in horde.enemies:
+		if u.alive and u.mode == "march":
+			dm += 1
+	var power := (1.0 + 0.14 * wave + 0.004 * wave * wave) * 0.8
+	# Tug of war: the side being pushed back sends more, and tougher, troops.
+	var f := lane_front()
+	var k := clampf((f - 0.5) * 2.2, -1.0, 1.0) if f >= 0.0 else 0.0
+	var d_n := 4 + int(maxf(0.0, k) * 5.0)
+	var s_n := 4 + int(maxf(0.0, -k) * 5.0)
+	var d_pow := power * (1.0 + maxf(0.0, k) * 1.6)
+	var s_pow := power * 0.95 * (1.0 + maxf(0.0, -k) * 1.6)
+	if dm < 60:
+		var gates := _citadel_gates()
+		for i in d_n:
+			horde.spawn(_wave_kind(), Maze.tile_center(gates[randi() % gates.size()]) + Vector3(randf_range(-0.8, 0.8), 0, randf_range(-0.8, 0.8)), "march", d_pow, false)
+	if horde.soldiers.size() < 60:
+		var cg := _castle_gates()
+		for i in s_n:
+			horde.spawn_soldier(Horde.MIRROR[_wave_kind()], Maze.tile_center(cg[randi() % cg.size()]) + Vector3(randf_range(-0.8, 0.8), 0, randf_range(-0.8, 0.8)), s_pow * castle.army_power())
+
+
+## Where the War Lane battle stands: mean progress of every marching unit,
+## 0 = at Camelot's gate, 1 = at the Citadel's. -1 when the lane is empty.
+func lane_front() -> float:
+	var total: float = maze.to_castle_dist[Maze.idx(maze.citadel_tile + Vector2i(3, 3))]
+	var sum := 0.0
+	var n := 0
+	for u in horde.enemies:
+		if u.alive and u.mode == "march":
+			sum += clampf(maze.to_castle_dist[u.tile] / total, 0.0, 1.0)
+			n += 1
+	for u in horde.soldiers:
+		if u.alive:
+			sum += clampf(maze.to_castle_dist[u.tile] / total, 0.0, 1.0)
+			n += 1
+	return sum / n if n > 0 else -1.0
 
 
 ## The Dread Army grows through eras: wolves, then orcs and shamans, then the
@@ -574,7 +728,7 @@ func _wave_kind() -> String:
 
 
 func _queue_wave() -> void:
-	var n := mini(4 + int(wave * 2.6), 64)
+	var n := mini(8 + int(wave * 4.5), 110)
 	var power := 1.0 + 0.14 * wave + 0.004 * wave * wave
 	var boss := wave % 5 == 0
 	for k in n:
@@ -666,6 +820,18 @@ func _update_citadel(dt: float) -> void:
 		if citadel_fire_t <= 0.0:
 			citadel_fire_t = 0.9
 			fx.shoot("dark", maze.citadel_pos + Vector3(0, 6.0, 0), sold.pos + Vector3(0, 0.8, 0), 12.0, 24.0 + wave * 2.0, 1)
+	# Dread Pulse: the Citadel scours soldiers massing at its gate.
+	_pulse_t -= dt
+	if _pulse_t <= 0.0:
+		_pulse_t = 4.0
+		var hit := horde.friends_near(maze.citadel_pos, 13.0)
+		var n_hit := 0
+		for f2: Unit in hit:
+			if f2.mode == "march":
+				horde.hurt_friend(f2, 26.0 + wave * 3.0)
+				n_hit += 1
+		if n_hit > 0:
+			fx.ring(maze.citadel_pos, 2.0, 13.0, Color(0.85, 0.15, 0.25), 0.6, 0.2)
 	var hero_near := hero.alive and d < 17.0
 	if hero_near or sold != null:
 		if hero_near:
@@ -881,7 +1047,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
-			hud.click(mb.position, true)
+			if state == "play":
+				hero.blink(_mouse_ground())
 			return
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
@@ -949,6 +1116,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				toggle_mute()
 			KEY_M:
 				hud.big_map = not hud.big_map
+			KEY_E:
+				if state == "play":
+					hero.blink(_mouse_ground())
 			KEY_T:
 				if state == "play":
 					if marks.waypoint_here():
@@ -1147,8 +1317,8 @@ func _ui_shots() -> void:
 
 
 func _sim_report() -> void:
-	if wave != _sim_wave:
-		_sim_wave = wave
+	if int(play_time / 30.0) != _sim_wave:
+		_sim_wave = int(play_time / 30.0)
 		var sold := 0
 		for u in horde.soldiers:
 			if u.alive: sold += 1
@@ -1157,8 +1327,16 @@ func _sim_report() -> void:
 			if u.alive and u.mode == "march": march += 1
 		var lv := ""
 		for u in Castle.UPGRADES: lv += str(castle.level(u.key))
-		print("SIM t=%d wave=%d castle=%d/%d gold=%d soldiers=%d dread_marching=%d enemies=%d citadel=%d lvls=%s hero_lvl=%d" % [play_time, wave, castle.hp, castle.max_hp, castle.gold, sold, march, horde.enemies.size(), citadel_hp, lv, hero.level])
-	if play_time > 1500.0 or state == "over":
+		# Where is the front? Mean progress of marching Dread (0 = citadel, 1 = Camelot).
+		var fr := 0.0
+		var nf := 0
+		var total: float = maze.to_castle_dist[Maze.idx(maze.citadel_tile + Vector2i(3, 3))]
+		for u in horde.enemies:
+			if u.alive and u.mode == "march":
+				fr += 1.0 - maze.to_castle_dist[Maze.idx(Maze.tile_of(u.pos))] / total
+				nf += 1
+		print("SIM t=%d wave=%d castle=%d soldiers=%d dread=%d lane_front=%.2f (0=Camelot 1=Citadel)" % [play_time, wave, castle.hp, sold, march, lane_front()])
+	if play_time > 1300.0 or state == "over":
 		print("SIM END state=%s t=%d wave=%d" % [state, play_time, wave])
 		get_tree().quit()
 

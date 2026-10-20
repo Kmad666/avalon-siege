@@ -68,6 +68,11 @@ var relic_gold := 1.0
 var relics: Array[String] = []
 # Equipment.
 var gear := {}            # slot -> Items.Item
+# Blink: a short teleport toward the cursor on a fixed cooldown (never upgraded).
+const BLINK_CD := 20.0
+const BLINK_RANGE := 8.0
+var blink_t := 0.0
+var barrier := 0.0        # Mending Ward shield, absorbs damage first
 
 var body: MeshInstance3D
 var staff_pivot: Node3D
@@ -105,7 +110,7 @@ func setup(g: Game) -> void:
 
 
 func _xp_for(l: int) -> float:
-	return 12.0 + l * 9.0 + l * l * 2.6
+	return (12.0 + l * 9.0 + l * l * 2.6) * 1.5
 
 
 func gear_stat(stat: String) -> float:
@@ -143,6 +148,8 @@ func update(dt: float) -> void:
 	potion_cd = maxf(0.0, potion_cd - dt)
 	lost_msg_t = maxf(0.0, lost_msg_t - dt)
 	cast_t = maxf(0.0, cast_t - dt)
+	blink_t = maxf(0.0, blink_t - dt)
+	barrier = maxf(0.0, barrier - dt * 2.0)
 	if not alive:
 		respawn_t -= dt
 		if respawn_t <= 0.0:
@@ -191,7 +198,10 @@ func _move(dt: float) -> void:
 				var f := game.click_flow(position)
 				if f != Vector3.ZERO:
 					dir = f
-	var want := dir * speed
+	# Roads are quick going.
+	var ln := game.maze.lane_at(position)
+	var road := 1.25 if ln == Maze.L_ROAD or ln == Maze.L_WAR else 1.0
+	var want := dir * speed * road
 	vel = vel.lerp(want, minf(1.0, dt * 14.0))
 	var np := game.marks.collide_hero(game.maze.collide(position + vel * dt, 0.42))
 	var moved := (np - position).length()
@@ -260,7 +270,7 @@ func _spells(dt: float) -> void:
 				var cp := game.maze.citadel_pos + Vector3(0, 4.0, 0)
 				_cast_at(cp)
 				game.fx.lightning(from, cp, Color(0.6, 0.75, 1.0))
-				game.damage_citadel(dmg2 * 1.5)
+				game.damage_citadel(dmg2 * 1.5 * FX.HERO_CITADEL_MULT)
 				game.sfx.play("zap", -2.0, 0.1)
 			else:
 				_cast_at(first.pos)
@@ -296,7 +306,8 @@ func _spells(dt: float) -> void:
 			for k in n:
 				var spread := (k - (n - 1) * 0.5) * 0.35
 				var dirv := (aim2 - p).normalized().rotated(Vector3.UP, spread)
-				game.fx.shoot("bolt", p + Vector3(0, 1.0, 0), p + Vector3(0, 1, 0) + dirv * 5.0, 13.0, (11.0 + 4.0 * (bl - 1)) * dmg_mult, 0, tgt)
+				var pb: FX.Proj = game.fx.shoot("bolt", p + Vector3(0, 1.0, 0), p + Vector3(0, 1, 0) + dirv * 5.0, 13.0, (11.0 + 4.0 * (bl - 1)) * dmg_mult, 0, tgt)
+				pb.hero = true
 	# --- Fireball
 	var fl: int = weapons.get("fireball", 0)
 	if fl > 0:
@@ -307,7 +318,8 @@ func _spells(dt: float) -> void:
 			var shots := 1 + (1 if fl >= 4 else 0) + (1 if fl >= 6 else 0)
 			for k in shots:
 				var off := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * (0.0 if k == 0 else 2.5)
-				game.fx.shoot("fireball", p + Vector3(0, 1.0, 0), aim3 + off + Vector3(0, 1, 0), 11.0, (26.0 + 9.0 * (fl - 1)) * dmg_mult, 0, null, 2.3 + 0.3 * fl)
+				var pf: FX.Proj = game.fx.shoot("fireball", p + Vector3(0, 1.0, 0), aim3 + off + Vector3(0, 1, 0), 11.0, (26.0 + 9.0 * (fl - 1)) * dmg_mult, 0, null, 2.3 + 0.3 * fl)
+				pf.hero = true
 	# --- Arcane nova
 	var nl: int = weapons.get("nova", 0)
 	if nl > 0:
@@ -399,6 +411,13 @@ func take_damage(amount: float, from: Vector3) -> void:
 	if not alive or invuln > 0.0 or game.state != "play":
 		return
 	var d := maxf(1.0, amount - armor)
+	if barrier > 0.0:
+		var ab := minf(barrier, d)
+		barrier -= ab
+		d -= ab
+		if d <= 0.0:
+			game.fx.number(position + Vector3(0, 1.9, 0), "warded", Color(1, 0.95, 0.6))
+			return
 	hp -= d
 	invuln = 0.15
 	hurt_flash = 0.3
@@ -435,6 +454,39 @@ func _respawn() -> void:
 	move_target = Vector3.INF
 	invuln = 2.0
 	game.fx.ring(position, 0.2, 3.0, Color(1, 0.9, 0.5), 0.6)
+
+
+## Blink toward `target`: up to BLINK_RANGE metres, through walls if need be.
+func blink(target: Vector3) -> void:
+	if not alive or target == Vector3.INF:
+		return
+	if blink_t > 0.0:
+		game.fx.number(position + Vector3(0, 2.2, 0), "Blink in %d s" % int(ceil(blink_t)), Color(0.7, 0.8, 1.0))
+		return
+	var d := target - position
+	d.y = 0
+	if d.length() < 0.6:
+		return
+	if d.length() > BLINK_RANGE:
+		d = d.normalized() * BLINK_RANGE
+	var dest := Vector3.INF
+	for i in 21:
+		var p := position + d * (1.0 - float(i) / 20.0)
+		if game.maze.is_open_p(p):
+			dest = game.marks.collide_hero(game.maze.collide(p, 0.42))
+			break
+	if dest == Vector3.INF or (dest - position).length() < 0.6:
+		return
+	game.fx.ring(position, 0.2, 1.8, Color(0.55, 0.75, 1.0), 0.4, 0.15)
+	game.fx.burst(position + Vector3(0, 0.8, 0), Color(0.6, 0.8, 1.0), 12, 3.0, 0.12, 2.0)
+	position = dest
+	vel = Vector3.ZERO
+	move_target = Vector3.INF
+	invuln = maxf(invuln, 0.35)
+	blink_t = BLINK_CD
+	game.fx.ring(position, 1.8, 0.2, Color(0.55, 0.75, 1.0), 0.4, 0.15)
+	game.fx.sparkle(position, Color(0.7, 0.85, 1.0), 12, 0.11)
+	game.sfx.play("zap", 0.0, 0.0, 0.1)
 
 
 func drink_potion() -> void:
