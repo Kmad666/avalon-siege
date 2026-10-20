@@ -4,7 +4,7 @@ A low-poly isometric fantasy action RPG made in **Godot 4.7**, playable in the b
 
 **Play:** https://kmad666.github.io/avalon-siege/
 
-You are **Merlin**. Camelot stands fully defended in one corner of a fog-choked realm; the Dread Citadel looms in the other. While the two armies grind against each other on the War Lane, you and your hooded Circle of Avalon venture out — down the guarded Royal Roads, along branching trails, and into maze pockets that hide spellbooks and treasure.
+You are **Merlin**. Camelot stands fully defended in one corner of a darkened realm; the Dread Citadel looms in the other. While the two armies grind against each other on the War Lane, you and your hooded Circle of Avalon venture out — down the guarded Royal Roads, along branching trails, and into maze pockets that hide spellbooks and treasure.
 
 ## How to play
 - **Pick a difficulty** on the title screen: Squire, Knight or Legend.
@@ -13,10 +13,10 @@ You are **Merlin**. Camelot stands fully defended in one corner of a fog-choked 
 - **The Circle of Avalon**: four hooded adepts follow you from the start, each with their own spell — **Frost** (frost bolts that slow), **Ember** (a cone of flame), **Thorn** (a briar field that roots and wounds the swarm) and **Light** (Mending Ward: heals and shields you). A fallen adept returns 15 s later.
 - **Camelot defends itself**: all five archer towers, stout walls, a mage tower and Royal Guards at every gate from the first second. Its steward keeps spending gold on miners, the army and the rest.
 - **The realm**:
-  - **The War Lane** — the single direct road between Camelot and the Citadel. Both sides feed troops into it constantly; whichever side is being pushed back sends more, so the battle surges back and forth.
+  - **The War Lane** — the single direct road between Camelot and the Citadel. Both sides feed troops into it constantly; whichever side is being pushed back sends more, so the battle surges back and forth. It's a battle of attrition: the War Lane's fallen drop no gold or soul gems.
   - **The Royal Roads and the Kingsroad** — fast roads (you move 25% quicker on them) to treasure hubs in the far corners, each guarded by a mini-boss and a legendary hoard. **Dread garrisons** with a Garrison Captain hold every road: only cross once you can break them.
   - **Branching trails** fork off the roads through the forest and ruins to glades and **maze pockets**. Every pocket hides a reward at its heart — a **spellbook**, a **treasure chest** or a rich **gold seam** — and the minimap marks what each holds.
-- **Fog**: a grey Silent Hill haze hides everything beyond a short radius. The minimap only shows foes that you, Camelot, your troops or your shrines can see.
+- **Fog of war**: pitch-black darkness hides everything beyond a short, ragged circle of light around Merlin. The minimap only shows foes that you, Camelot, your troops or your shrines can see.
 - **The swarm**: Dread foes are fragile but numerous.
 - **Loot equips itself**: if a drop beats what Merlin wears he puts it on, otherwise it's melted down for gold.
 - **Ley Shrines**: capture them for gold, healing and waypoint travel (**T**).

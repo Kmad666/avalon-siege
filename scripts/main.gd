@@ -37,7 +37,7 @@ var lane_t := 10.0
 var _hud_t := 0.0
 var _pulse_t := 4.0
 var garrison_caps: Array[Unit] = []
-const VISION := 11.0
+const VISION := 7.5
 var castle: Castle
 var hero: Hero
 var hud: HUD
@@ -934,6 +934,9 @@ func _citadel_collapse(dt: float) -> void:
 
 func on_enemy_killed(u: Unit) -> void:
 	kills += 1
+	# The War Lane is a battle of attrition: its fallen leave no gold or soul gems.
+	if u.mode == "march":
+		return
 	fx.drop("gem", u.pos, u.xp)
 	if u.structure:
 		marks.on_ward_destroyed(u)

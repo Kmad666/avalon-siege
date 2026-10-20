@@ -91,7 +91,7 @@ func _update_seen() -> void:
 	var fb := game.horde.fbucket
 	for u in game.horde.enemies:
 		var p := u.pos
-		var s := (hp - p).length_squared() < 400.0 or (cp - p).length_squared() < 500.0
+		var s := (hp - p).length_squared() < 120.0 or (cp - p).length_squared() < 500.0
 		if not s:
 			for sh in shrines:
 				if (sh.pos - p).length_squared() < 150.0:

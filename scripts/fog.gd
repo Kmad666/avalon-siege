@@ -1,7 +1,7 @@
 class_name Fog
 extends ColorRect
-## Silent Hill fog: a grey, slowly drifting haze that swallows everything
-## beyond a short radius around Merlin. One full-screen quad, a few noise
+## Fog of war: pitch-black darkness that swallows everything beyond a short,
+## ragged circle of light around Merlin. One full-screen quad, a few noise
 ## lookups per pixel; cheap on integrated graphics.
 
 const SHADER := """
@@ -11,10 +11,10 @@ render_mode unshaded;
 uniform vec2 screen_size = vec2(1280.0, 720.0);
 uniform vec2 center = vec2(640.0, 360.0);
 uniform vec2 radii = vec2(200.0, 160.0);
-uniform float fade = 1.75;
-uniform float max_alpha = 0.94;
+uniform float fade = 1.45;
+uniform float max_alpha = 1.0;
 uniform float t = 0.0;
-uniform vec3 fog_color = vec3(0.6, 0.61, 0.6);
+uniform vec3 fog_color = vec3(0.0, 0.0, 0.0);
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -32,8 +32,8 @@ void fragment() {
 	float n = noise(px * 0.0045 + vec2(t * 0.06, t * 0.025)) * 0.6
 		+ noise(px * 0.013 - vec2(t * 0.09, -t * 0.03)) * 0.4;
 	float a = smoothstep(1.0, fade, r + (n - 0.5) * 0.45);
-	a = max(a * max_alpha, 0.08 + 0.1 * n);
-	COLOR = vec4(fog_color * (0.9 + 0.2 * n), a);
+	a = a * max_alpha;
+	COLOR = vec4(fog_color, a);
 }
 """
 
