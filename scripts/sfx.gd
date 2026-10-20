@@ -8,7 +8,12 @@ const RATE := 22050
 var streams := {}
 var players: Array[AudioStreamPlayer] = []
 var last := {}
-var muted := false
+static var muted := false
+
+
+func toggle() -> void:
+	muted = not muted
+	AudioServer.set_bus_mute(0, muted)
 var _next := 0
 var _rng := RandomNumberGenerator.new()
 

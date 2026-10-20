@@ -946,8 +946,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if state == "play":
 					hero.drink_potion()
 			KEY_N:
-				sfx.muted = not sfx.muted
-				hud.message("Sound off" if sfx.muted else "Sound on", 1.2)
+				toggle_mute()
 			KEY_M:
 				hud.big_map = not hud.big_map
 			KEY_T:
@@ -984,6 +983,11 @@ func travel_to(i: int) -> void:
 func choose_difficulty(i: int) -> void:
 	set_difficulty(i)
 	start()
+
+
+func toggle_mute() -> void:
+	sfx.toggle()
+	hud.message("Sound off" if Sfx.muted else "Sound on", 1.2)
 
 
 func _mouse_ground() -> Vector3:

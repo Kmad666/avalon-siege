@@ -25,6 +25,7 @@ var _diff_rects: Array[Rect2] = []
 var _bag_rects: Array[Rect2] = []
 var _gear_rects := {}             # slot -> Rect2
 var _travel_rects: Array[Rect2] = []
+var _mute_rect := Rect2()
 var _map_t := 0.0
 var loot_log: Array = []          # [text, color, t]
 
@@ -53,6 +54,9 @@ func message(text: String, dur := 3.0, col := TEXT) -> void:
 
 ## Returns true if the click hit the interface.
 func click(p: Vector2, right := false) -> bool:
+	if _mute_rect.has_point(p):
+		game.toggle_mute()
+		return true
 	if game.state == "title":
 		for i in _diff_rects.size():
 			if _diff_rects[i].has_point(p):
@@ -137,12 +141,14 @@ func _draw2() -> void:
 	_draw_world_text()
 	if game.state == "title":
 		_draw_title(vs)
+		_draw_mute(vs, 10.0)
 		return
 	_draw_top_left()
 	_draw_top_center(vs)
 	_draw_top_right(vs)
 	_draw_upgrades(vs)
 	_draw_minimap(vs)
+	_draw_mute(vs, 92.0)
 	if msg_t > 0.0 and (game.state == "play" or game.state == "paused" or (game.state == "won" and game.end_t < 1.5)):
 		var a := clampf(msg_t, 0.0, 1.0)
 		var c := msg_col
@@ -346,6 +352,25 @@ func _draw_upgrades(vs: Vector2) -> void:
 			draw_rect(Rect2(r.position + Vector2(5 + k * 8, 17), Vector2(6, 3)), GOLD if k < lv else Color(0.3, 0.28, 0.25))
 		if r.has_point(mp):
 			_str(Vector2(x0, y0 - 28), "%s — %s" % [u.name, u.desc], 13, TEXT)
+
+
+## Clickable speaker icon (top right, under the treasury panel).
+func _draw_mute(vs: Vector2, y: float) -> void:
+	var r := Rect2(vs.x - 46, y, 36, 36)
+	_mute_rect = r
+	var hover := r.has_point(get_viewport().get_mouse_position())
+	draw_rect(r, Color(0.12, 0.11, 0.09, 0.9) if hover else PANEL)
+	draw_rect(r, EDGE, false, 1.5)
+	var c := r.position + Vector2(10, 18)
+	var col := TEXT if not Sfx.muted else Color(0.6, 0.55, 0.5)
+	draw_rect(Rect2(c + Vector2(-3, -4), Vector2(5, 8)), col)
+	draw_colored_polygon(PackedVector2Array([c + Vector2(2, -4), c + Vector2(9, -10), c + Vector2(9, 10), c + Vector2(2, 4)]), col)
+	if Sfx.muted:
+		draw_line(c + Vector2(13, -5), c + Vector2(22, 5), Color(1, 0.4, 0.35), 2.5)
+		draw_line(c + Vector2(22, -5), c + Vector2(13, 5), Color(1, 0.4, 0.35), 2.5)
+	else:
+		draw_arc(c + Vector2(9, 0), 6, -0.9, 0.9, 8, col, 2.0)
+		draw_arc(c + Vector2(9, 0), 11, -0.9, 0.9, 10, col, 2.0)
 
 
 func _draw_minimap(vs: Vector2) -> void:

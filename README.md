@@ -17,7 +17,7 @@ You are **Merlin**. Leave Camelot in the corner of the realm, venture into a liv
 - **Spellbooks** glow in dead ends; **six mini-bosses** lair in the glades and drop permanent relics.
 - **The endgame**: three **Dread Wards** shield the Citadel. Destroy them all to bring the shield down; at half health the **Dread Lord** rises. Destroy the Citadel to win — lose Camelot and it's over.
 
-**Keys:** SPACE / Q potion · T waypoint travel · M map · mouse wheel zoom · P pause · F fullscreen · G graphics quality · N sound
+**Keys:** SPACE / Q potion · T waypoint travel · M map · mouse wheel zoom · P pause · F fullscreen · G graphics quality · N or the speaker button (top right) to mute
 
 ## The realm
 - A large maze generated fresh each game: a braided labyrinth with loops, open glades and long avenues.
