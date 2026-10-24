@@ -30,7 +30,7 @@ func setup(g: Game, camera: Camera3D) -> void:
 	body.mesh = Props.hero_body()
 	Toon.apply(body, Toon.hero())
 	add_child(body)
-	# Glowing eyes in the dark of the hood, with a faint ember light inside it.
+	# Glowing eyes in the dark of the hood, with a faint green light inside it.
 	var eyes := MeshInstance3D.new()
 	eyes.mesh = Props.hero_eyes()
 	Geo.apply(eyes, true)
@@ -41,9 +41,9 @@ func setup(g: Game, camera: Camera3D) -> void:
 	haze.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	body.add_child(haze)
 	var glow := OmniLight3D.new()
-	glow.position = Vector3(0, 1.5, 0.32)
+	glow.position = Vector3(0, 1.49, 0.4)
 	glow.light_color = Props.EYE
-	glow.light_energy = 1.2
+	glow.light_energy = 0.7
 	glow.omni_range = 0.6
 	body.add_child(glow)
 	cloak_pivot = Node3D.new()

@@ -85,74 +85,90 @@ static func boulder() -> ArrayMesh:
 
 # ------------------------------------------------------------- the hooded hero
 
-const ROBE := Color(0.38, 0.35, 0.36)
-const HOOD := Color(0.31, 0.29, 0.31)
-const LEATHER := Color(0.45, 0.3, 0.2)
-const IRON := Color(0.58, 0.6, 0.64)
-const GOLD := Color(0.86, 0.66, 0.28)
+const ROBE := Color(0.56, 0.46, 0.52)       # dusty mauve
+const HOOD := Color(0.5, 0.41, 0.47)
+const ROBE_DARK := Color(0.4, 0.32, 0.38)
+const STEEL := Color(0.7, 0.72, 0.77)
+const GRIP := Color(0.24, 0.17, 0.14)
+const GOLD := Color(0.62, 0.55, 0.42)       # worn brass fittings
 const VOID := Color(0.01, 0.01, 0.015)
-const EYE := Color(1.0, 0.62, 0.18)
+const EYE := Color(0.35, 1.0, 0.4)          # sickly green glow
 
 
-## The hero: a broad-shouldered hooded wanderer. Heavy robe, iron pauldrons,
-## a deep cowl hiding the face. Faces +z. The eyes are a separate mesh so
-## they can glow (see hero_eyes).
+## A box stretched from a to b (limbs, sleeves).
+static func _limb(g: Geo, a: Vector3, b: Vector3, w: float, d: float, col: Color) -> void:
+	var y := (b - a).normalized()
+	var x := Vector3.UP.cross(y)
+	if x.length() < 0.01:
+		x = Vector3.RIGHT
+	x = x.normalized()
+	var z := x.cross(y).normalized()
+	g.push(Transform3D(Basis(x, y, z), (a + b) * 0.5))
+	g.box(Vector3.ZERO, Vector3(w, a.distance_to(b), d), col)
+	g.pop()
+
+
+## The hero: a tall hooded knight in long mauve robes, broad in the shoulder,
+## both hands resting on the pommel of a great sword planted point-down in
+## front of him. The face is a void under a peaked hood. Faces +z. The eyes
+## are a separate mesh so they can glow (see hero_eyes).
 static func hero_body() -> ArrayMesh:
 	return _cached("hero", func():
 		var g := Geo.new()
-		# Boots peeking out under the robe.
-		for sx in [-0.13, 0.13]:
-			g.box(Vector3(sx, 0.1, 0.05), Vector3(0.17, 0.2, 0.28), LEATHER.darkened(0.35))
-		# Long robe: flares toward the hem, cinched at the waist.
-		g.push_at(Vector3.ZERO, 0.0, Vector3(1.1, 1.0, 0.9))
-		g.prism(Vector3(0, 0.12, 0), 0.4, 0.29, 0.78, 9, ROBE, Color(0, 0, 0, 0), 0.17)
+		# Floor-length robe, flaring toward the hem.
+		g.push_at(Vector3.ZERO, 0.0, Vector3(1.12, 1.0, 0.92))
+		g.prism(Vector3(0, 0.02, 0), 0.42, 0.29, 0.92, 12, ROBE, Color(0, 0, 0, 0), 0.13)
 		g.pop()
-		# Broad chest: wider than deep, widening up to the shoulders.
-		g.push_at(Vector3.ZERO, 0.0, Vector3(1.45, 1.0, 0.85))
-		g.prism(Vector3(0, 0.9, 0), 0.25, 0.33, 0.44, 8, ROBE.lightened(0.04), Color(0, 0, 0, 0), 0.2)
+		# Broad chest under the robe, widening to the shoulders.
+		g.push_at(Vector3.ZERO, 0.0, Vector3(1.4, 1.0, 0.85))
+		g.prism(Vector3(0, 0.92, 0), 0.26, 0.34, 0.42, 10, ROBE.lightened(0.03), Color(0, 0, 0, 0), 0.16)
 		g.pop()
-		g.box(Vector3(0, 0.92, 0), Vector3(0.74, 0.09, 0.46), LEATHER)            # belt
-		g.box(Vector3(0, 0.92, 0.235), Vector3(0.11, 0.11, 0.03), GOLD)           # buckle
-		g.box(Vector3(0.2, 0.62, 0.2), Vector3(0.12, 0.62, 0.02), ROBE.darkened(0.25))  # robe split
-		# Leather harness across the chest.
-		g.push(Transform3D(Basis(Vector3(0, 0, 1), 0.75), Vector3(0, 1.12, 0.215)))
-		g.box(Vector3.ZERO, Vector3(0.08, 0.6, 0.03), LEATHER)
+		# A darker sash down the front, and a cord belt.
+		_limb(g, Vector3(0, 0.95, 0.27), Vector3(0, 0.1, 0.4), 0.2, 0.03, ROBE_DARK)
+		g.push_at(Vector3(0, 0.93, 0), 0.0, Vector3(1.32, 1.0, 1.0))
+		g.prism(Vector3.ZERO, 0.3, 0.3, 0.06, 10, ROBE_DARK.darkened(0.2), Color(0, 0, 0, 0), 0.16)
 		g.pop()
-		# Shoulders: iron pauldrons over a heavy mantle.
-		g.push_at(Vector3(0, 1.3, -0.02), 0.0, Vector3(1.5, 1.0, 1.0))
-		g.blob(Vector3.ZERO, 0.34, 0.16, HOOD, 211, 7, 1)
+		# Shoulder mantle: a short cape over the shoulders.
+		g.push_at(Vector3(0, 1.18, -0.01), 0.0, Vector3(1.45, 1.0, 1.05))
+		g.prism(Vector3.ZERO, 0.38, 0.22, 0.2, 10, HOOD, Color(0, 0, 0, 0), 0.16)
 		g.pop()
+		# Wide sleeves bent forward so both hands meet on the pommel.
+		var hands := Vector3(0, 1.0, 0.44)
 		for sx in [-1.0, 1.0]:
-			g.push(Transform3D(Basis(Vector3(0, 0, 1), sx * -0.45), Vector3(sx * 0.48, 1.3, 0.0)))
-			g.prism(Vector3(0, -0.06, 0), 0.19, 0.12, 0.12, 7, IRON, IRON.lightened(0.1))
-			g.prism(Vector3(0, -0.1, 0), 0.2, 0.2, 0.04, 7, IRON.darkened(0.25))
-			g.pop()
-			# Arms: wide sleeves, leather bracers, gloved fists.
-			g.box(Vector3(sx * 0.53, 1.07, 0.02), Vector3(0.2, 0.34, 0.22), ROBE)
-			g.box(Vector3(sx * 0.55, 0.82, 0.05), Vector3(0.17, 0.22, 0.18), LEATHER)
-			g.box(Vector3(sx * 0.55, 0.82, 0.05), Vector3(0.18, 0.04, 0.19), IRON)
-			g.box(Vector3(sx * 0.55, 0.65, 0.07), Vector3(0.14, 0.13, 0.15), LEATHER.darkened(0.3))
-		# The cowl: a deep, peaked hood with a dark void where the face is.
-		g.push_at(Vector3(0, 1.36, 0.0), 0.0, Vector3(1.0, 1.0, 1.15))
-		g.prism(Vector3(0, 0.0, -0.02), 0.22, 0.2, 0.22, 8, HOOD, Color(0, 0, 0, 0), 0.2)
-		g.prism(Vector3(0, 0.22, -0.02), 0.2, 0.0, 0.26, 8, HOOD, Color(0, 0, 0, 0), 0.2)
+			var sh := Vector3(sx * 0.47, 1.25, 0.0)
+			var el := Vector3(sx * 0.46, 0.93, 0.15)
+			var cuff := Vector3(sx * 0.12, 1.0, 0.4)
+			_limb(g, sh, el, 0.22, 0.24, ROBE)
+			_limb(g, el, cuff, 0.25, 0.26, ROBE.darkened(0.06))
+			_limb(g, cuff - (cuff - el).normalized() * 0.03, cuff + (cuff - el).normalized() * 0.02, 0.27, 0.28, ROBE_DARK)
+			g.box(hands + Vector3(sx * 0.055, 0.0, -0.01), Vector3(0.11, 0.12, 0.12), GRIP.lightened(0.05))  # gauntlets
+		# The great sword, point-down in front: pommel, grip, guard, blade.
+		var sw := Vector3(0, 0, 0.47)
+		g.prism(sw + Vector3(0, 1.08, 0), 0.05, 0.03, 0.06, 6, GOLD)
+		g.box(sw + Vector3(0, 0.98, 0), Vector3(0.05, 0.16, 0.05), GRIP)
+		g.box(sw + Vector3(0, 0.89, 0), Vector3(0.34, 0.05, 0.07), GOLD)
+		g.box(sw + Vector3(0, 0.865, 0), Vector3(0.1, 0.04, 0.08), GOLD.darkened(0.15))
+		g.box(sw + Vector3(0, 0.5, 0), Vector3(0.1, 0.7, 0.03), STEEL)
+		g.box(sw + Vector3(0, 0.55, 0.016), Vector3(0.025, 0.58, 0.005), STEEL.darkened(0.25))   # fuller
+		g.tri(sw + Vector3(-0.05, 0.15, 0.015), sw + Vector3(0.05, 0.15, 0.015), sw + Vector3(0, 0.02, 0.0), STEEL)
+		g.tri(sw + Vector3(0.05, 0.15, -0.015), sw + Vector3(-0.05, 0.15, -0.015), sw + Vector3(0, 0.02, 0.0), STEEL.darkened(0.1))
+		# The tall, peaked hood with a dark void where the face is.
+		g.push_at(Vector3(0, 1.3, -0.01), 0.0, Vector3(1.0, 1.0, 1.15))
+		g.prism(Vector3(0, 0.0, -0.02), 0.25, 0.21, 0.28, 8, HOOD, Color(0, 0, 0, 0), 0.2)
 		g.pop()
-		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.18), Vector3(0, 1.49, 0.2)))
-		g.quad(Vector3(-0.12, -0.13, 0), Vector3(0.12, -0.13, 0), Vector3(0.1, 0.13, 0), Vector3(-0.1, 0.13, 0), VOID)
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.22), Vector3(0, 1.58, -0.04)))
+		g.push_at(Vector3.ZERO, 0.0, Vector3(1.0, 1.0, 1.15))
+		g.prism(Vector3.ZERO, 0.21, 0.0, 0.42, 8, HOOD, Color(0, 0, 0, 0), 0.2)
 		g.pop()
-		# Hood brim overhanging the face, and the drape falling to the chest.
-		g.push(Transform3D(Basis(Vector3(1, 0, 0), 0.35), Vector3(0, 1.63, 0.18)))
-		g.box(Vector3.ZERO, Vector3(0.3, 0.05, 0.13), HOOD.lightened(0.05))
 		g.pop()
-		g.push_at(Vector3(0, 1.22, 0.08), 0.0, Vector3(1.3, 1.0, 1.0))
-		g.prism(Vector3.ZERO, 0.24, 0.2, 0.12, 8, HOOD, Color(0, 0, 0, 0), 0.2)
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.18), Vector3(0, 1.49, 0.275)))
+		g.quad(Vector3(-0.13, -0.15, 0), Vector3(0.13, -0.15, 0), Vector3(0.1, 0.15, 0), Vector3(-0.1, 0.15, 0), VOID)
 		g.pop()
-		# Gram's hilt at the left hip.
-		g.push(Transform3D(Basis(Vector3(1, 0, 0), 0.5), Vector3(-0.4, 0.82, 0.05)))
-		g.box(Vector3(0, -0.36, 0), Vector3(0.07, 0.72, 0.04), LEATHER.darkened(0.3))
-		g.box(Vector3(0, 0.05, 0), Vector3(0.22, 0.04, 0.05), GOLD)
-		g.box(Vector3(0, 0.15, 0), Vector3(0.04, 0.16, 0.04), LEATHER)
-		g.box(Vector3(0, 0.25, 0), Vector3(0.07, 0.05, 0.07), GOLD)
+		# The hood's rim framing the void.
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.18), Vector3(0, 1.49, 0.29)))
+		g.box(Vector3(0, 0.16, 0), Vector3(0.3, 0.05, 0.05), HOOD.lightened(0.04))
+		g.box(Vector3(-0.145, -0.01, 0), Vector3(0.05, 0.34, 0.05), HOOD.lightened(0.04))
+		g.box(Vector3(0.145, -0.01, 0), Vector3(0.05, 0.34, 0.05), HOOD.lightened(0.04))
 		g.pop()
 		return g.mesh(true))
 
@@ -161,14 +177,14 @@ static func hero_body() -> ArrayMesh:
 static func hero_eyes() -> ArrayMesh:
 	return _cached("hero_eyes", func():
 		var g := Geo.new()
-		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.18), Vector3(0, 1.5, 0.205)))
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.18), Vector3(0, 1.49, 0.28)))
 		for sd in [-1.0, 1.0]:
-			# Slanted slits, inner corners lower: a hard, narrowed stare.
-			var o := Vector3(sd * 0.095, 0.014, 0)
-			var i := Vector3(sd * 0.022, -0.004, 0)
-			var h := Vector3(0, 0.022, 0)
-			g.quad(o, i, i - h, o - h * 0.6, EYE)
-			g.quad(o - h * 0.6, i - h, i, o, EYE)
+			# Small, level, glowing eyes.
+			var c := Vector3(sd * 0.055, 0.0, 0)
+			var hw := Vector3(0.026, 0, 0)
+			var hh := Vector3(0, 0.02, 0)
+			g.quad(c - hw - hh, c + hw - hh, c + hw + hh, c - hw + hh, EYE)
+			g.quad(c - hw + hh, c + hw + hh, c + hw - hh, c - hw - hh, EYE)
 		g.pop()
 		return g.mesh(false))
 
@@ -177,15 +193,15 @@ static func hero_eyes() -> ArrayMesh:
 static func hero_eye_haze() -> ArrayMesh:
 	return _cached("hero_eye_haze", func():
 		var g := Geo.new()
-		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.18), Vector3(0, 1.5, 0.21)))
-		var c := Color(EYE.r * 0.45, EYE.g * 0.3, EYE.b * 0.15)
+		g.push(Transform3D(Basis(Vector3(1, 0, 0), -0.18), Vector3(0, 1.49, 0.285)))
+		var c := Color(EYE.r * 0.12, EYE.g * 0.22, EYE.b * 0.12)
 		for sd in [-1.0, 1.0]:
 			var m := Vector3(sd * 0.058, 0.004, 0)
 			for k in 8:
 				var a0 := TAU * k / 8.0
 				var a1 := TAU * (k + 1) / 8.0
-				g.tri(m, m + Vector3(cos(a0) * 0.085, sin(a0) * 0.05, 0), m + Vector3(cos(a1) * 0.085, sin(a1) * 0.05, 0), c)
-				g.tri(m, m + Vector3(cos(a1) * 0.085, sin(a1) * 0.05, 0), m + Vector3(cos(a0) * 0.085, sin(a0) * 0.05, 0), c)
+				g.tri(m, m + Vector3(cos(a0) * 0.05, sin(a0) * 0.035, 0), m + Vector3(cos(a1) * 0.05, sin(a1) * 0.035, 0), c)
+				g.tri(m, m + Vector3(cos(a1) * 0.05, sin(a1) * 0.035, 0), m + Vector3(cos(a0) * 0.05, sin(a0) * 0.035, 0), c)
 		g.pop()
 		return g.mesh(false))
 
@@ -195,9 +211,9 @@ static func hero_eye_haze() -> ArrayMesh:
 static func hero_cloak() -> ArrayMesh:
 	return _cached("cloak", func():
 		var g := Geo.new()
-		var c := HOOD.lightened(0.02)
+		var c := ROBE.darkened(0.08)
 		var top := 0.0
-		var bot := -1.12
+		var bot := -1.2
 		var n := 7
 		for i in n:
 			var u0 := float(i) / n
@@ -206,9 +222,9 @@ static func hero_cloak() -> ArrayMesh:
 			var x1t := lerpf(-0.42, 0.42, u1)
 			var x0b := lerpf(-0.56, 0.56, u0)
 			var x1b := lerpf(-0.56, 0.56, u1)
-			var b0 := bot + (0.0 if i % 2 == 0 else 0.1)
-			var b1 := bot + (0.1 if i % 2 == 0 else 0.0)
-			var tip := bot - 0.08 - 0.06 * float((i * 7) % 3)
+			var b0 := bot + (0.0 if i % 2 == 0 else 0.04)
+			var b1 := bot + (0.04 if i % 2 == 0 else 0.0)
+			var tip := bot - 0.03
 			var xm := (x0b + x1b) * 0.5
 			# Outer and inner faces of each strip, then a ragged point.
 			g.quad(Vector3(x0t, top, 0), Vector3(x1t, top, 0), Vector3(x1b, b1, -0.08), Vector3(x0b, b0, -0.08), c)
