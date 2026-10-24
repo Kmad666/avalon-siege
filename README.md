@@ -25,8 +25,8 @@ Runestones mark the road along the way.
 
 ## Look
 - **Cel shading:** a custom toon shader with three hard light bands, crisp shadow edges and a hot rim light from the low sun. An **ink-outline** pass (inverted hull with smoothed normals, so hard edges don't crack) traces every model.
-- **Blue hour:** a deep royal-blue sky graded to a bright horizon, a low pale moon throwing long shadows, and blue haze that melts the far hills into the sky.
-- **The hero:** a broad-shouldered hooded wanderer — iron pauldrons, a ragged cloak, and only two burning eyes in the dark of the cowl. A moonlit rim traces his silhouette.
+- **Deep blue day:** a deep royal-blue sky graded to a bright horizon, a high white sun throwing crisp cel shadows, and blue haze that melts the far hills into the sky.
+- **The hero:** a broad-shouldered hooded wanderer — iron pauldrons, a ragged cloak, and only two burning eyes in the dark of the cowl. A light rim traces his silhouette.
 - Everything — terrain, trees, the hero, the forge, the lair — is low-poly geometry generated in code, coloured by vertex. No texture or model files.
 
 ## Performance

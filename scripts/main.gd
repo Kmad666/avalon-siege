@@ -82,11 +82,12 @@ func _setup_input() -> void:
 				InputMap.action_add_event(action, ev)
 
 
-## Blue hour over a dark land: a deep blue sky graded down to a bright
-## horizon, a pale moon throwing cold light and long shadows, and blue haze
-## that melts the far hills into the sky.
+## Bright day over a dark land: a deep blue sky graded down to a bright
+## horizon, a high white sun throwing crisp shadows, and blue haze that melts
+## the far hills into the sky.
 const SKY_TOP := Color(0.039, 0.18, 0.525)
 const SKY_HORIZON := Color(0.188, 0.427, 0.878)
+const EXPOSURE := 1.7
 
 const SKY_SHADER := """
 shader_type sky;
@@ -94,6 +95,7 @@ uniform vec3 top_color;
 uniform vec3 horizon_color;
 uniform vec3 ground_color;
 uniform float grade_height = 0.55;
+uniform float exposure = 1.0;     // undo the scene exposure so the blues stay exact
 
 vec3 to_linear(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
@@ -103,13 +105,14 @@ void sky() {
 	float y = EYEDIR.y;
 	vec3 col = mix(horizon_color, top_color, smoothstep(0.0, grade_height, y));
 	col = mix(col, ground_color, smoothstep(0.0, -0.08, y));
-	// The moon: a pale disc with a soft halo, where the light comes from.
+	// The sun: a hard white disc with a bright halo.
 	if (LIGHT0_ENABLED) {
 		float d = dot(EYEDIR, LIGHT0_DIRECTION);
-		col = mix(col, vec3(0.93, 0.95, 1.0), smoothstep(0.99955, 0.9997, d));
-		col += vec3(0.25, 0.3, 0.4) * pow(max(d, 0.0), 220.0) * 0.6;
+		col += vec3(0.5, 0.55, 0.5) * pow(max(d, 0.0), 90.0);
+		col = mix(col, vec3(1.0, 0.98, 0.92), smoothstep(0.9993, 0.9995, d));
 	}
-	COLOR = col;
+	vec3 lin = to_linear(col) / exposure;
+	COLOR = mix(lin * 12.92, 1.055 * pow(lin, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, lin));
 }
 """
 
@@ -125,28 +128,28 @@ func _setup_env() -> void:
 	sm.set_shader_parameter("top_color", Vector3(SKY_TOP.r, SKY_TOP.g, SKY_TOP.b))
 	sm.set_shader_parameter("horizon_color", Vector3(SKY_HORIZON.r, SKY_HORIZON.g, SKY_HORIZON.b))
 	sm.set_shader_parameter("ground_color", Vector3(0.05, 0.09, 0.2))
+	sm.set_shader_parameter("exposure", EXPOSURE)
 	sky.sky_material = sm
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.36, 0.46, 0.8)
-	env.ambient_light_energy = 0.95
-	# Linear tonemapping so the sky shows exactly the chosen blues.
+	env.ambient_light_color = Color(0.68, 0.74, 0.9)
+	env.ambient_light_energy = 1.0
+	# Linear tonemapping (the sky shader cancels the exposure) so the sky shows exactly the chosen blues.
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-	env.tonemap_exposure = 1.0
+	env.tonemap_exposure = EXPOSURE
 	env.fog_enabled = true
-	env.fog_light_color = SKY_HORIZON.darkened(0.12)
-	env.fog_density = 0.0038
+	env.fog_light_color = SKY_HORIZON.lightened(0.08)
+	env.fog_density = 0.0017
 	env.fog_sun_scatter = 0.0
 	env.fog_sky_affect = 0.0
 	we.environment = env
 	add_child(we)
 	sun = DirectionalLight3D.new()
-	# A low moon ahead and to the left of the road north: long shadows, and
-	# visible in the sky as you fly toward the lair.
-	sun.rotation = Vector3(deg_to_rad(-24.0), deg_to_rad(118.0), 0)
-	sun.light_color = Color(0.85, 0.9, 1.0)
-	sun.light_energy = 3.6
+	# A high sun over your shoulder (south-west) as you travel north: the road ahead is sunlit.
+	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(-35.0), 0)
+	sun.light_color = Color(1.0, 0.96, 0.88)
+	sun.light_energy = 3.9
 	sun.shadow_enabled = true
 	sun.shadow_bias = 0.06
 	sun.shadow_normal_bias = 1.5
