@@ -54,8 +54,9 @@ func _ready() -> void:
 	camera = Camera3D.new()
 	camera.fov = 62.0
 	camera.near = 0.15
-	camera.far = 700.0
+	camera.far = 240.0     # the fog hides everything beyond
 	add_child(camera)
+	_setup_snow()
 	flyer.setup(self, camera)
 	var s := terrain.start
 	flyer.teleport(Vector3(s.x, terrain.height_at(s.x, s.y) + START_ALT, s.y), PI)
@@ -82,12 +83,12 @@ func _setup_input() -> void:
 				InputMap.action_add_event(action, ev)
 
 
-## Bright day over a dark land: a deep blue sky graded down to a bright
-## horizon, a high white sun throwing crisp shadows, and blue haze that melts
-## the far hills into the sky.
-const SKY_TOP := Color(0.039, 0.18, 0.525)
-const SKY_HORIZON := Color(0.188, 0.427, 0.878)
-const EXPOSURE := 1.7
+## Deep winter: a low iron-grey overcast, a weak white sun somewhere behind
+## it, and heavy freezing fog that swallows the valley a stone's throw ahead.
+const SKY_TOP := Color(0.36, 0.38, 0.42)
+const SKY_HORIZON := Color(0.66, 0.68, 0.71)
+const FOG := Color(0.63, 0.65, 0.69)
+const EXPOSURE := 1.0
 
 const SKY_SHADER := """
 shader_type sky;
@@ -105,11 +106,10 @@ void sky() {
 	float y = EYEDIR.y;
 	vec3 col = mix(horizon_color, top_color, smoothstep(0.0, grade_height, y));
 	col = mix(col, ground_color, smoothstep(0.0, -0.08, y));
-	// The sun: a hard white disc with a bright halo.
+	// The sun is only a pale bright patch in the cloud.
 	if (LIGHT0_ENABLED) {
-		float d = dot(EYEDIR, LIGHT0_DIRECTION);
-		col += vec3(0.5, 0.55, 0.5) * pow(max(d, 0.0), 90.0);
-		col = mix(col, vec3(1.0, 0.98, 0.92), smoothstep(0.9993, 0.9995, d));
+		float d = max(dot(EYEDIR, LIGHT0_DIRECTION), 0.0);
+		col += vec3(0.2, 0.2, 0.19) * pow(d, 24.0) + vec3(0.05) * pow(d, 4.0);
 	}
 	vec3 lin = to_linear(col) / exposure;
 	COLOR = mix(lin * 12.92, 1.055 * pow(lin, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, lin));
@@ -127,29 +127,31 @@ func _setup_env() -> void:
 	sm.shader = sh
 	sm.set_shader_parameter("top_color", Vector3(SKY_TOP.r, SKY_TOP.g, SKY_TOP.b))
 	sm.set_shader_parameter("horizon_color", Vector3(SKY_HORIZON.r, SKY_HORIZON.g, SKY_HORIZON.b))
-	sm.set_shader_parameter("ground_color", Vector3(0.05, 0.09, 0.2))
+	sm.set_shader_parameter("ground_color", Vector3(FOG.r, FOG.g, FOG.b))
 	sm.set_shader_parameter("exposure", EXPOSURE)
 	sky.sky_material = sm
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.68, 0.74, 0.9)
-	env.ambient_light_energy = 1.0
-	# Linear tonemapping (the sky shader cancels the exposure) so the sky shows exactly the chosen blues.
+	# Overcast: most light is soft, grey-blue skylight.
+	env.ambient_light_color = Color(0.72, 0.76, 0.84)
+	env.ambient_light_energy = 0.92
+	# Linear tonemapping (the sky shader cancels the exposure) so the sky shows exactly the chosen greys.
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	env.tonemap_exposure = EXPOSURE
 	env.fog_enabled = true
-	env.fog_light_color = SKY_HORIZON.lightened(0.08)
-	env.fog_density = 0.0017
+	env.fog_light_color = FOG
+	env.fog_density = 0.026
 	env.fog_sun_scatter = 0.0
-	env.fog_sky_affect = 0.0
+	env.fog_sky_affect = 0.55
 	we.environment = env
 	add_child(we)
 	sun = DirectionalLight3D.new()
-	# A high sun over your shoulder (south-west) as you travel north: the road ahead is sunlit.
-	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(-35.0), 0)
-	sun.light_color = Color(1.0, 0.96, 0.88)
-	sun.light_energy = 3.9
+	# A weak sun through the overcast, over your shoulder as you travel north:
+	# faint shadows, soft cel bands.
+	sun.rotation = Vector3(deg_to_rad(-38.0), deg_to_rad(-30.0), 0)
+	sun.light_color = Color(0.95, 0.96, 1.0)
+	sun.light_energy = 1.5
 	sun.shadow_enabled = true
 	sun.shadow_bias = 0.06
 	sun.shadow_normal_bias = 1.5
@@ -181,15 +183,15 @@ func _place_landmarks() -> void:
 		var a := k * TAU / 9.0
 		var p := t.ring + Vector2(cos(a), sin(a)) * 9.0
 		_put(Props.standing_stone(), p, a, null, randf_range(0.85, 1.2))
-	# The pool the wurm drinks from: still black water.
+	# The pool the wurm drinks from: frozen over, dark ice under the snow.
 	var water := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(19, 19)
 	water.mesh = pm
 	var wm := StandardMaterial3D.new()
-	wm.albedo_color = Color(0.05, 0.08, 0.1)
-	wm.roughness = 0.08
-	wm.metallic_specular = 0.9
+	wm.albedo_color = Color(0.34, 0.42, 0.48)
+	wm.roughness = 0.15
+	wm.metallic_specular = 0.7
 	water.material_override = wm
 	water.position = Vector3(t.pool.x, t.height_at(t.pool.x + 9.5, t.pool.y) - 1.0, t.pool.y)
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -246,8 +248,43 @@ func _light(p: Vector3, c: Color, energy: float, rng: float) -> void:
 
 # ------------------------------------------------------------- loop
 
+var snow: CPUParticles3D
+
+
+## Falling snow: a box of flakes that travels with the camera.
+func _setup_snow() -> void:
+	snow = CPUParticles3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(0.09, 0.09)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.albedo_color = Color(0.97, 0.98, 1.0)
+	m.disable_fog = true
+	q.material = m
+	snow.mesh = q
+	snow.amount = 1400
+	snow.lifetime = 7.0
+	snow.preprocess = 7.0
+	snow.local_coords = false
+	snow.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	snow.emission_box_extents = Vector3(28, 2, 28)
+	snow.direction = Vector3(0.3, -1, 0.15)
+	snow.spread = 12.0
+	snow.initial_velocity_min = 1.4
+	snow.initial_velocity_max = 2.4
+	snow.gravity = Vector3(0, -0.4, 0)
+	snow.scale_amount_min = 0.6
+	snow.scale_amount_max = 1.5
+	snow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	snow.visibility_aabb = AABB(Vector3(-40, -30, -40), Vector3(80, 40, 80))
+	add_child(snow)
+
+
 func _process(delta: float) -> void:
 	time += delta
+	if snow != null:
+		snow.global_position = camera.global_position + Vector3(0, 10, 0)
 	_track_fps(delta)
 	hud.queue_redraw()
 	if shot_dir != "":
@@ -312,11 +349,13 @@ func _apply_quality() -> void:
 	var vp := get_viewport()
 	match quality:
 		0:
+			snow.amount = 500
 			vp.scaling_3d_scale = 0.7
 			sun.shadow_enabled = false
 			Toon.set_outlines(false)
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 		1:
+			snow.amount = 1400
 			vp.scaling_3d_scale = 1.0
 			sun.shadow_enabled = true
 			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
@@ -324,6 +363,7 @@ func _apply_quality() -> void:
 			Toon.set_outlines(true)
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 		2:
+			snow.amount = 2200
 			vp.scaling_3d_scale = 1.0
 			sun.shadow_enabled = true
 			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS

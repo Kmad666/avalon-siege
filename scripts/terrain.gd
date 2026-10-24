@@ -176,22 +176,21 @@ func _ground_color(x: float, z: float, n: Vector3) -> Color:
 	var hv := hill_value(x, z)
 	var e := edge_value(x, z)
 	var j := n_detail.get_noise_2d(x * 3.1, z * 3.1) * 0.05
-	# Valley grass: dusky green that drains toward the heath.
-	var grass := Color(0.25, 0.31, 0.17).lerp(Color(0.31, 0.29, 0.19), smoothstep(0.3, 0.65, p))
-	grass = grass.lerp(Color(0.27, 0.23, 0.19), smoothstep(0.7, 0.88, p))
-	# Forest floor under the pines on the hills.
-	var forest := Color(0.17, 0.21, 0.13).lerp(Color(0.2, 0.17, 0.14), smoothstep(0.6, 0.9, p))
-	var c := grass.lerp(forest, smoothstep(0.25, 0.6, hv) * smoothstep(8.0, 20.0, d))
-	# Mountains: bare rock above, scree below.
-	c = c.lerp(Color(0.3, 0.3, 0.33), smoothstep(0.3, 0.8, e))
-	# Steep faces are rock.
-	c = c.lerp(Color(0.33, 0.33, 0.36), smoothstep(0.35, 0.6, slope))
-	# The path: trodden earth.
-	c = c.lerp(Color(0.36, 0.29, 0.21), 1.0 - smoothstep(2.0, 4.0, d))
-	# The wurm's scorched trail and the ashen heath.
+	# Deep snow over the whole valley, a touch greyer and more trodden under the trees.
+	var snow := Color(0.8, 0.82, 0.87)
+	var forest := Color(0.7, 0.72, 0.78)
+	var c := snow.lerp(forest, smoothstep(0.25, 0.6, hv) * smoothstep(8.0, 20.0, d))
+	# Mountains: wind-scoured snow.
+	c = c.lerp(Color(0.8, 0.82, 0.87), smoothstep(0.3, 0.8, e))
+	# Steep faces are bare dark rock, where snow can't cling.
+	c = c.lerp(Color(0.3, 0.31, 0.35), smoothstep(0.42, 0.62, slope))
+	# The path: snow churned to grey slush and frozen mud.
+	c = c.lerp(Color(0.52, 0.5, 0.49), 1.0 - smoothstep(1.6, 3.6, d))
+	c = c.lerp(Color(0.38, 0.33, 0.29), (1.0 - smoothstep(0.4, 1.4, d)) * 0.6)
+	# The wurm's trail has melted the snow to black, scorched earth; the heath is ash on snow.
 	var td := trail_dist(x, z)
 	c = c.lerp(Color(0.12, 0.1, 0.09), (1.0 - smoothstep(1.2, 3.2, td)) * 0.9)
-	c = c.lerp(Color(0.16, 0.14, 0.13), smoothstep(0.9, 0.98, p))
+	c = c.lerp(Color(0.5, 0.49, 0.5), smoothstep(0.9, 0.98, p) * 0.7)
 	return c.lightened(j) if j > 0.0 else c.darkened(-j)
 
 
@@ -224,11 +223,11 @@ func build(parent: Node3D) -> void:
 			Toon.apply(mi, Toon.mat(false), true)
 			parent.add_child(mi)
 			var ci := cz * cx_n + cx
-			_multimesh(parent, Props.pine(), trees_pine[ci], 230.0, Toon.foliage())
-			_multimesh(parent, Props.broadleaf(), trees_broad[ci], 230.0, Toon.foliage())
-			_multimesh(parent, Props.dead_tree(), trees_dead[ci], 230.0, Toon.mat(true))
+			_multimesh(parent, Props.pine(), trees_pine[ci], 160.0, Toon.foliage())
+			_multimesh(parent, Props.broadleaf(), trees_broad[ci], 160.0, Toon.foliage())
+			_multimesh(parent, Props.dead_tree(), trees_dead[ci], 160.0, Toon.mat(true))
 			_multimesh(parent, Props.shrub(), shrubs[ci], 90.0, Toon.foliage(), false)
-			_multimesh(parent, Props.boulder(), rocks[ci], 180.0, Toon.mat(true))
+			_multimesh(parent, Props.boulder(), rocks[ci], 130.0, Toon.mat(true))
 	_build_backdrop(parent)
 
 
@@ -265,7 +264,7 @@ func _multimesh(parent: Node3D, mesh: Mesh, xfs: Array, vis: float, mat: Materia
 ## Far peaks beyond the valley walls, and a dark plain under everything.
 func _build_backdrop(parent: Node3D) -> void:
 	var g := Geo.new()
-	g.quad(Vector3(-3000, -2, -3000), Vector3(-3000, -2, L + 3000), Vector3(W + 3000, -2, L + 3000), Vector3(W + 3000, -2, -3000), Color(0.1, 0.11, 0.12))
+	g.quad(Vector3(-3000, -2, -3000), Vector3(-3000, -2, L + 3000), Vector3(W + 3000, -2, L + 3000), Vector3(W + 3000, -2, -3000), Color(0.6, 0.62, 0.66))
 	var brng := RandomNumberGenerator.new()
 	brng.seed = 99
 	for k in 70:
@@ -287,7 +286,7 @@ func _build_backdrop(parent: Node3D) -> void:
 				z = L + brng.randf_range(30, 140)
 		var hh := brng.randf_range(45, 110)
 		var rr := hh * brng.randf_range(0.7, 1.1)
-		g.prism(Vector3(x, -2, z), rr, 0.0, hh, brng.randi_range(5, 7), Color(0.22, 0.23, 0.27), Color(0, 0, 0, 0), brng.randf() * TAU)
+		g.prism(Vector3(x, -2, z), rr, 0.0, hh, brng.randi_range(5, 7), Color(0.5, 0.52, 0.57), Color(0.85, 0.87, 0.91), brng.randf() * TAU)
 	var mi := MeshInstance3D.new()
 	mi.mesh = g.mesh(false)
 	Toon.apply(mi, Toon.mat(false), false)

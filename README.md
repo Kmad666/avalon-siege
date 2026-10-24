@@ -7,12 +7,12 @@ A cel-shaded, dark-fantasy third-person adventure made in **Godot 4.7**, playabl
 > Current build: **map preview**. There are no enemies or mechanics yet — Sigurd flies freely so the valley can be inspected as it's built.
 
 ## The valley
-A long valley (~1 km by 190 m) walled in by mountains. The road winds from the south to the north between medium hills thick with dark pine:
+A long, snowbound valley (~1 km by 190 m) walled in by mountains. The road winds from the south to the north between medium hills thick with snow-laden pine:
 
 1. **Regin's Forge** — the start: the smith's turf-roofed forge, still glowing, where Gram was remade.
 2. **The Barrows** — burial mounds with stone doorways.
 3. **The Stone Ring** — nine standing stones beside the road.
-4. **The Wurm's Pool** — the black pool where Fafnir drinks; the scorched furrow of his trail leads up to it (where Sigurd dug his pit).
+4. **The Wurm's Pool** — the frozen pool where Fafnir drinks; the scorched furrow of his trail leads up to it (where Sigurd dug his pit).
 5. **Gnitaheath** — the forest withers into a blasted heath of dead trees and bones.
 6. **Fafnir's Lair** — a great cave under the northern cliffs, its hoard glinting in the dark.
 
@@ -25,7 +25,7 @@ Runestones mark the road along the way.
 
 ## Look
 - **Cel shading:** a custom toon shader with three hard light bands, crisp shadow edges and a hot rim light from the low sun. An **ink-outline** pass (inverted hull with smoothed normals, so hard edges don't crack) traces every model.
-- **Deep blue day:** a deep royal-blue sky graded to a bright horizon, a high white sun throwing crisp cel shadows, and blue haze that melts the far hills into the sky.
+- **Deep winter:** an iron-grey overcast, a weak sun behind the cloud, deep snow on the ground and heaped on the pines, the pool frozen over, snow falling, and heavy freezing fog that swallows the valley a short way ahead. The wurm's trail has melted the snow down to black earth.
 - **The hero:** a broad-shouldered hooded wanderer — iron pauldrons, a ragged cloak, and only two burning eyes in the dark of the cowl. A light rim traces his silhouette.
 - Everything — terrain, trees, the hero, the forge, the lair — is low-poly geometry generated in code, coloured by vertex. No texture or model files.
 

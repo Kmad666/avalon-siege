@@ -15,6 +15,9 @@ static func _cached(key: String, builder: Callable) -> ArrayMesh:
 
 # ------------------------------------------------------------- vegetation
 
+const SNOW := Color(0.84, 0.86, 0.91)
+
+
 static func pine() -> ArrayMesh:
 	return _cached("pine", func():
 		var g := Geo.new()
@@ -23,7 +26,11 @@ static func pine() -> ArrayMesh:
 		var y := 1.6
 		var r := 2.4
 		for k in 4:
-			g.prism(Vector3(0, y, 0), r, 0.0, 2.9 - k * 0.3, 7, cols[k], Color(0, 0, 0, 0), k * 0.45)
+			var h := 2.9 - k * 0.3
+			g.prism(Vector3(0, y, 0), r, 0.0, h, 7, cols[k], Color(0, 0, 0, 0), k * 0.45)
+			# Snow lying on the upper part of each tier, slightly proud of the needles.
+			var f := 0.42 if k < 3 else 0.3
+			g.prism(Vector3(0, y + h * f, 0), r * (1.0 - f) + 0.08, 0.0, h * (1.0 - f) + 0.05, 7, SNOW, Color(0, 0, 0, 0), k * 0.45)
 			y += 1.75 - k * 0.15
 			r *= 0.74
 		return g.mesh(true))
@@ -36,9 +43,12 @@ static func broadleaf() -> ArrayMesh:
 		g.push(Transform3D(Basis(Vector3(0, 0, 1), 0.5), Vector3(0, 2.4, 0)))
 		g.prism(Vector3.ZERO, 0.12, 0.06, 1.5, 4, Color(0.3, 0.24, 0.19))
 		g.pop()
-		g.blob(Vector3(0, 2.6, 0), 2.4, 3.0, Color(0.2, 0.25, 0.14), 71, 7, 2)
-		g.blob(Vector3(1.1, 3.6, 0.5), 1.5, 1.9, Color(0.23, 0.27, 0.15), 72, 6, 2)
-		g.blob(Vector3(-0.9, 3.3, -0.7), 1.4, 1.7, Color(0.18, 0.22, 0.13), 73, 6, 2)
+		# Winter: dark twiggy crowns heaped with snow.
+		g.blob(Vector3(0, 2.6, 0), 2.4, 3.0, Color(0.24, 0.21, 0.2), 71, 7, 2)
+		g.blob(Vector3(0.2, 4.2, 0.1), 1.9, 1.5, SNOW, 74, 7, 1)
+		g.blob(Vector3(1.1, 3.6, 0.5), 1.5, 1.9, Color(0.27, 0.23, 0.21), 72, 6, 2)
+		g.blob(Vector3(1.2, 4.9, 0.5), 1.15, 0.8, SNOW, 75, 6, 1)
+		g.blob(Vector3(-0.9, 3.3, -0.7), 1.4, 1.7, Color(0.22, 0.2, 0.19), 73, 6, 2)
 		return g.mesh(true))
 
 
@@ -58,8 +68,9 @@ static func dead_tree() -> ArrayMesh:
 static func shrub() -> ArrayMesh:
 	return _cached("shrub", func():
 		var g := Geo.new()
-		g.blob(Vector3.ZERO, 0.8, 0.9, Color(0.18, 0.24, 0.14), 81, 6, 1)
-		g.blob(Vector3(0.5, 0, 0.3), 0.55, 0.6, Color(0.2, 0.26, 0.15), 82, 5, 1)
+		g.blob(Vector3.ZERO, 0.8, 0.9, Color(0.16, 0.22, 0.17), 81, 6, 1)
+		g.blob(Vector3(0.05, 0.45, 0.0), 0.72, 0.5, SNOW, 83, 6, 1)
+		g.blob(Vector3(0.5, 0, 0.3), 0.55, 0.6, SNOW.darkened(0.06), 82, 5, 1)
 		return g.mesh(true))
 
 
@@ -67,6 +78,7 @@ static func boulder() -> ArrayMesh:
 	return _cached("boulder", func():
 		var g := Geo.new()
 		g.blob(Vector3.ZERO, 1.2, 1.3, Color(0.34, 0.34, 0.37), 91, 6, 2)
+		g.blob(Vector3(0.0, 0.85, 0.0), 0.95, 0.5, SNOW, 93, 6, 1)
 		g.blob(Vector3(0.9, 0, 0.4), 0.6, 0.6, Color(0.31, 0.31, 0.34), 92, 5, 1)
 		return g.mesh(true))
 
@@ -220,10 +232,10 @@ static func forge() -> ArrayMesh:
 		for sx in [-3.2, 3.2]:
 			for sz in [-2.2, 2.2]:
 				g.box(Vector3(sx, 1.6, sz), Vector3(0.35, 2.4, 0.35), wood.darkened(0.2))
-		# Turf roof.
+		# Turf roof under a thick layer of snow.
 		g.push_at(Vector3(0, 2.6, 0))
-		g.quad(Vector3(-3.8, 0, -2.8), Vector3(-3.8, 0, 2.8), Vector3(0, 1.8, 2.8), Vector3(0, 1.8, -2.8), Color(0.22, 0.27, 0.16))
-		g.quad(Vector3(0, 1.8, -2.8), Vector3(0, 1.8, 2.8), Vector3(3.8, 0, 2.8), Vector3(3.8, 0, -2.8), Color(0.2, 0.25, 0.15))
+		g.quad(Vector3(-3.8, 0, -2.8), Vector3(-3.8, 0, 2.8), Vector3(0, 1.8, 2.8), Vector3(0, 1.8, -2.8), SNOW.darkened(0.04))
+		g.quad(Vector3(0, 1.8, -2.8), Vector3(0, 1.8, 2.8), Vector3(3.8, 0, 2.8), Vector3(3.8, 0, -2.8), SNOW.darkened(0.08))
 		g.tri(Vector3(-3.8, 0, 2.8), Vector3(3.8, 0, 2.8), Vector3(0, 1.8, 2.8), wood)
 		g.tri(Vector3(3.8, 0, -2.8), Vector3(-3.8, 0, -2.8), Vector3(0, 1.8, -2.8), wood)
 		g.pop()
