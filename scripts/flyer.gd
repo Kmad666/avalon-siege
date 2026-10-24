@@ -1,7 +1,7 @@
 class_name Flyer
 extends Node3D
-## Sigurd, flying free for now so the valley can be inspected. A third-person
-## orbit camera follows him; he leans into his flight and his cloak streams.
+## The hooded hero, flying free for now so the valley can be inspected. A
+## third-person orbit camera follows; he leans into flight and his cloak streams.
 ##
 ## Mouse: look (click to capture) · WASD: fly · Space/E: up · C/Q: down ·
 ## Shift: faster · wheel: camera distance.
@@ -27,16 +27,31 @@ func setup(g: Game, camera: Camera3D) -> void:
 	game = g
 	cam = camera
 	body = MeshInstance3D.new()
-	body.mesh = Props.sigurd_body()
-	Toon.apply(body, Toon.mat(true))
+	body.mesh = Props.hero_body()
+	Toon.apply(body, Toon.hero())
 	add_child(body)
+	# Glowing eyes in the dark of the hood, with a faint ember light inside it.
+	var eyes := MeshInstance3D.new()
+	eyes.mesh = Props.hero_eyes()
+	Geo.apply(eyes, true)
+	body.add_child(eyes)
+	var haze := MeshInstance3D.new()
+	haze.mesh = Props.hero_eye_haze()
+	haze.material_override = Geo.mat_add()
+	haze.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body.add_child(haze)
+	var glow := OmniLight3D.new()
+	glow.position = Vector3(0, 1.5, 0.32)
+	glow.light_color = Props.EYE
+	glow.light_energy = 1.2
+	glow.omni_range = 0.6
+	body.add_child(glow)
 	cloak_pivot = Node3D.new()
 	cloak_pivot.position = Vector3(0, 1.3, -0.2)
 	body.add_child(cloak_pivot)
 	var cloak := MeshInstance3D.new()
-	cloak.mesh = Props.sigurd_cloak()
-	var cm: ShaderMaterial = Toon.mat(true)
-	Toon.apply(cloak, cm)
+	cloak.mesh = Props.hero_cloak()
+	Toon.apply(cloak, Toon.hero())
 	cloak_pivot.add_child(cloak)
 
 

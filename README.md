@@ -25,8 +25,9 @@ Runestones mark the road along the way.
 
 ## Look
 - **Cel shading:** a custom toon shader with three hard light bands, crisp shadow edges and a hot rim light from the low sun. An **ink-outline** pass (inverted hull with smoothed normals, so hard edges don't crack) traces every model.
-- **Dark fantasy dusk:** an ember sky, a low warm sun throwing long shadows, cold blue shade and haze that swallows the far end of the valley.
-- Everything — terrain, trees, Sigurd, the forge, the lair — is low-poly geometry generated in code, coloured by vertex. No texture or model files.
+- **Blue hour:** a deep royal-blue sky graded to a bright horizon, a low pale moon throwing long shadows, and blue haze that melts the far hills into the sky.
+- **The hero:** a broad-shouldered hooded wanderer — iron pauldrons, a ragged cloak, and only two burning eyes in the dark of the cowl. A moonlit rim traces his silhouette.
+- Everything — terrain, trees, the hero, the forge, the lair — is low-poly geometry generated in code, coloured by vertex. No texture or model files.
 
 ## Performance
 Built for laptops with integrated graphics (GL Compatibility renderer):
@@ -35,9 +36,9 @@ Built for laptops with integrated graphics (GL Compatibility renderer):
 
 ## How it's built
 - `scripts/terrain.gd` — the valley: heightfield, path, biomes, scatter, chunked meshes
-- `scripts/props.gd` — all models (Sigurd, trees, forge, runestones, lair, hoard…)
+- `scripts/props.gd` — all models (the hero, trees, forge, runestones, lair, hoard…)
 - `scripts/toon.gd` — the cel and outline shaders
-- `scripts/flyer.gd` — Sigurd's free flight and the chase camera
+- `scripts/flyer.gd` — the hero's free flight and the chase camera
 - `scripts/main.gd` — lighting, landmarks, quality; `scripts/hud.gd` — overlay and strip map; `scripts/sfx.gd` — wind ambience; `scripts/geo.gd` — low-poly mesh builder
 - `.github/workflows/deploy.yml` exports the web build on every push to `main` and publishes it to GitHub Pages.
 

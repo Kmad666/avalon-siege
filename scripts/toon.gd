@@ -11,6 +11,7 @@ render_mode cull_back, specular_disabled;
 uniform float rim_strength = 0.35;
 uniform float band_soft = 0.04;
 uniform float sway = 0.0;          // > 0 for foliage: gentle wind sway
+uniform float rim_back = 0.0;      // moonlit edge even on the shadowed side (hero)
 
 vec3 to_linear(vec3 c) {
 	return mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, step(c, vec3(0.04045)));
@@ -39,8 +40,9 @@ void light() {
 	float sh = smoothstep(0.35, 0.55, ATTENUATION);
 	float lit = (0.55 * b1 + 0.45 * b2) * sh;
 	// Rim: a thin hot edge where surfaces turn away from the viewer, on the lit side.
-	float rim = smoothstep(0.62, 0.7, 1.0 - max(dot(NORMAL, VIEW), 0.0)) * b1 * sh;
-	DIFFUSE_LIGHT += LIGHT_COLOR * (lit + rim * rim_strength) / 3.14159;
+	float edge = smoothstep(0.62, 0.7, 1.0 - max(dot(NORMAL, VIEW), 0.0));
+	float rim = edge * b1 * sh;
+	DIFFUSE_LIGHT += LIGHT_COLOR * (lit + rim * rim_strength + edge * rim_back) / 3.14159;
 }
 """
 
@@ -74,6 +76,7 @@ void fragment() {
 static var _toon: ShaderMaterial          # no outline (terrain)
 static var _toon_ol: ShaderMaterial       # with ink outline
 static var _foliage: ShaderMaterial
+static var _hero: ShaderMaterial
 static var _outline: ShaderMaterial
 static var _outline_foliage: ShaderMaterial
 static var outlines_on := true
@@ -102,6 +105,11 @@ static func _init_all() -> void:
 	_outline_foliage.set_shader_parameter("sway", 1.0)
 	_outline_foliage.set_shader_parameter("width", 0.06)
 	_foliage.next_pass = _outline_foliage
+	_hero = ShaderMaterial.new()
+	_hero.shader = st
+	_hero.set_shader_parameter("rim_strength", 0.6)
+	_hero.set_shader_parameter("rim_back", 0.45)
+	_hero.next_pass = _outline
 
 
 ## Solid cel-shaded surfaces. `outlined` adds the ink pass.
@@ -116,12 +124,19 @@ static func foliage() -> ShaderMaterial:
 	return _foliage
 
 
+## The hero: cel shading with a moonlit rim that traces his silhouette.
+static func hero() -> ShaderMaterial:
+	_init_all()
+	return _hero
+
+
 ## Turn the ink pass on or off everywhere (graphics quality).
 static func set_outlines(on: bool) -> void:
 	_init_all()
 	outlines_on = on
 	_toon_ol.next_pass = _outline if on else null
 	_foliage.next_pass = _outline_foliage if on else null
+	_hero.next_pass = _outline if on else null
 
 
 static func apply(gi: GeometryInstance3D, material: Material, shadows := true) -> void:

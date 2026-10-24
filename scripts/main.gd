@@ -82,40 +82,71 @@ func _setup_input() -> void:
 				InputMap.action_add_event(action, ev)
 
 
-## Dusk over a dark land: a low ember sun, a cold blue shade, and haze that
-## swallows the far end of the valley.
+## Blue hour over a dark land: a deep blue sky graded down to a bright
+## horizon, a pale moon throwing cold light and long shadows, and blue haze
+## that melts the far hills into the sky.
+const SKY_TOP := Color(0.039, 0.18, 0.525)
+const SKY_HORIZON := Color(0.188, 0.427, 0.878)
+
+const SKY_SHADER := """
+shader_type sky;
+uniform vec3 top_color;
+uniform vec3 horizon_color;
+uniform vec3 ground_color;
+uniform float grade_height = 0.55;
+
+vec3 to_linear(vec3 c) {
+	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
+}
+
+void sky() {
+	float y = EYEDIR.y;
+	vec3 col = mix(horizon_color, top_color, smoothstep(0.0, grade_height, y));
+	col = mix(col, ground_color, smoothstep(0.0, -0.08, y));
+	// The moon: a pale disc with a soft halo, where the light comes from.
+	if (LIGHT0_ENABLED) {
+		float d = dot(EYEDIR, LIGHT0_DIRECTION);
+		col = mix(col, vec3(0.93, 0.95, 1.0), smoothstep(0.99955, 0.9997, d));
+		col += vec3(0.25, 0.3, 0.4) * pow(max(d, 0.0), 220.0) * 0.6;
+	}
+	COLOR = col;
+}
+"""
+
+
 func _setup_env() -> void:
 	var we := WorldEnvironment.new()
 	env = Environment.new()
 	var sky := Sky.new()
-	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color(0.05, 0.06, 0.1)
-	sm.sky_horizon_color = Color(0.46, 0.3, 0.27)
-	sm.sky_curve = 0.12
-	sm.ground_bottom_color = Color(0.04, 0.04, 0.05)
-	sm.ground_horizon_color = Color(0.3, 0.22, 0.21)
-	sm.sun_angle_max = 8.0
-	sm.sun_curve = 0.08
+	var sm := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = SKY_SHADER
+	sm.shader = sh
+	sm.set_shader_parameter("top_color", Vector3(SKY_TOP.r, SKY_TOP.g, SKY_TOP.b))
+	sm.set_shader_parameter("horizon_color", Vector3(SKY_HORIZON.r, SKY_HORIZON.g, SKY_HORIZON.b))
+	sm.set_shader_parameter("ground_color", Vector3(0.05, 0.09, 0.2))
 	sky.sky_material = sm
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.4, 0.45, 0.66)
-	env.ambient_light_energy = 0.7
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 1.15
+	env.ambient_light_color = Color(0.36, 0.46, 0.8)
+	env.ambient_light_energy = 0.95
+	# Linear tonemapping so the sky shows exactly the chosen blues.
+	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.22, 0.23, 0.29)
-	env.fog_density = 0.0042
-	env.fog_sun_scatter = 0.25
-	env.fog_sky_affect = 0.85
+	env.fog_light_color = SKY_HORIZON.darkened(0.12)
+	env.fog_density = 0.0038
+	env.fog_sun_scatter = 0.0
+	env.fog_sky_affect = 0.0
 	we.environment = env
 	add_child(we)
 	sun = DirectionalLight3D.new()
-	# Low in the west-south-west: long shadows across the valley.
-	sun.rotation = Vector3(deg_to_rad(-31.0), deg_to_rad(-58.0), 0)
-	sun.light_color = Color(1.0, 0.7, 0.48)
-	sun.light_energy = 3.4
+	# A low moon ahead and to the left of the road north: long shadows, and
+	# visible in the sky as you fly toward the lair.
+	sun.rotation = Vector3(deg_to_rad(-24.0), deg_to_rad(118.0), 0)
+	sun.light_color = Color(0.85, 0.9, 1.0)
+	sun.light_energy = 3.6
 	sun.shadow_enabled = true
 	sun.shadow_bias = 0.06
 	sun.shadow_normal_bias = 1.5
@@ -307,7 +338,8 @@ func _shots(delta: float) -> void:
 	# [name, ground point, camera yaw, camera pitch, camera distance, altitude]
 	var views := [
 		["start", Vector3(t.start.x, 0, t.start.y), 0.0, -0.25, 7.0, 12.0],
-		["sigurd", Vector3(t.start.x, 0, t.start.y - 20.0), 0.6, -0.05, 3.2, 3.0],
+		["hero", Vector3(t.start.x, 0, t.start.y - 20.0), 0.6, -0.05, 3.2, 3.0],
+		["face", Vector3(t.start.x, 0, t.start.y - 20.0), 0.35, -0.02, 2.6, 3.0],
 		["forge", Vector3(t.forge.x - 4.0, 0, t.forge.y + 18.0), 0.2, -0.3, 7.0, 6.0],
 		["valley", Vector3(t.path_x(700.0), 0, 700.0), 0.0, -0.35, 9.0, 34.0],
 		["ring", Vector3(t.ring.x - 6.0, 0, t.ring.y + 26.0), 0.1, -0.35, 8.0, 12.0],
@@ -326,6 +358,9 @@ func _shots(delta: float) -> void:
 		flyer.teleport(p, v[2])
 		flyer.cam_pitch = v[3]
 		flyer.cam_dist = v[4]
+		if v[0] == "face":
+			flyer.body_yaw = v[2]    # turn to face the camera
+			flyer._last_yaw = v[2]
 	_shot_t += delta
 	if _shot_t > 2.5:
 		_shot_t = 0.0
