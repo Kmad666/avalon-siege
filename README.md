@@ -26,7 +26,7 @@ Runestones mark the road along the way.
 ## Look
 - **Cel shading:** a custom toon shader with three hard light bands, crisp shadow edges and a hot rim light from the low sun. An **ink-outline** pass (inverted hull with smoothed normals, so hard edges don't crack) traces every model.
 - **Deep winter:** an iron-grey overcast, a weak sun behind the cloud, deep snow on the ground and heaped on the pines, the pool frozen over, snow falling, and heavy freezing fog that swallows the valley a short way ahead. The wurm's trail has melted the snow down to black earth.
-- **The hero:** a tall hooded knight in long dusty-mauve robes, broad in the shoulder, both hands resting on a great sword planted point-down before him. Under the peaked hood there is only darkness and two green-glowing eyes.
+- **The hero:** a tall, lanky hooded knight (about 2.3 m) in long dusty-mauve robes, broad in the shoulder, both hands resting on a great sword planted point-down before him. Under the peaked hood there is only darkness and two green-glowing eyes.
 - Everything — terrain, trees, the hero, the forge, the lair — is low-poly geometry generated in code, coloured by vertex. No texture or model files.
 
 ## Performance

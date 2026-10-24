@@ -8,6 +8,7 @@ extends Node3D
 
 const SPEED := 16.0
 const BOOST := 3.2
+const HERO_SCALE := Vector3(0.78, 1.32, 0.8)
 
 var game: Game
 var cam: Camera3D
@@ -29,6 +30,8 @@ func setup(g: Game, camera: Camera3D) -> void:
 	body = MeshInstance3D.new()
 	body.mesh = Props.hero_body()
 	Toon.apply(body, Toon.hero())
+	# Tall and lanky: stretched up, narrowed through the body (about 2.3 m).
+	body.scale = HERO_SCALE
 	add_child(body)
 	# Glowing eyes in the dark of the hood, with a faint green light inside it.
 	var eyes := MeshInstance3D.new()
@@ -134,7 +137,7 @@ func _animate(dt: float) -> void:
 
 
 func _update_camera(dt: float, snap: bool) -> void:
-	var target := position + Vector3(0, 1.3, 0)
+	var target := position + Vector3(0, 1.3 * HERO_SCALE.y, 0)
 	var dir := (Basis(Vector3.UP, cam_yaw) * Basis(Vector3(1, 0, 0), cam_pitch)) * Vector3(0, 0, 1)
 	var want := target + dir * cam_dist
 	var ground := game.terrain.height_at(want.x, want.z) + 0.6
