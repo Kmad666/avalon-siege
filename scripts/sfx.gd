@@ -14,12 +14,52 @@ static var muted := false
 func toggle() -> void:
 	muted = not muted
 	AudioServer.set_bus_mute(0, muted)
+
+
+## A seamless loop of moaning wind for the valley.
+func _start_wind() -> void:
+	var n := RATE * 6
+	var fade := RATE / 2
+	var buf := PackedFloat32Array()
+	buf.resize(n + fade)
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in n + fade:
+		var t := float(i) / RATE
+		var gust := 0.55 + 0.3 * sin(TAU * t / 6.0) + 0.15 * sin(TAU * t / 2.0 + 1.0)
+		lp = lerpf(lp, _rng.randf_range(-1.0, 1.0), 0.02 + 0.03 * gust)
+		lp2 = lerpf(lp2, lp, 0.2)
+		buf[i] = lp2 * 6.0 * gust
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in n:
+		var v := buf[i]
+		if i < fade:
+			var k := float(i) / fade
+			v = v * k + buf[n + i] * (1.0 - k)
+		data.encode_s16(i * 2, int(clampf(v, -1.0, 1.0) * 26000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = RATE
+	w.data = data
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	w.loop_begin = 0
+	w.loop_end = n
+	var pl := AudioStreamPlayer.new()
+	pl.stream = w
+	pl.volume_db = -14.0
+	add_child(pl)
+	pl.play()
+
+
 var _next := 0
 var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	_rng.seed = 7
+	AudioServer.set_bus_mute(0, muted)
+	_start_wind()
 	for k in 12:
 		var p := AudioStreamPlayer.new()
 		p.volume_db = -8.0

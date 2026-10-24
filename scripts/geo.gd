@@ -158,7 +158,10 @@ func is_empty() -> bool:
 	return verts.is_empty()
 
 
-func mesh() -> ArrayMesh:
+## Build the mesh. With `outline_normals`, a smoothed normal per position is
+## stored in CUSTOM0 so the ink-outline pass can push the hull out without
+## cracking open at the flat-shaded hard edges.
+func mesh(outline_normals := false) -> ArrayMesh:
 	var am := ArrayMesh.new()
 	if verts.is_empty():
 		return am
@@ -167,7 +170,24 @@ func mesh() -> ArrayMesh:
 	arr[Mesh.ARRAY_VERTEX] = verts
 	arr[Mesh.ARRAY_NORMAL] = norms
 	arr[Mesh.ARRAY_COLOR] = cols
-	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var flags := 0
+	if outline_normals:
+		var acc := {}
+		for i in verts.size():
+			var k := Vector3i(roundi(verts[i].x * 500.0), roundi(verts[i].y * 500.0), roundi(verts[i].z * 500.0))
+			acc[k] = acc.get(k, Vector3.ZERO) + norms[i]
+		var cust := PackedFloat32Array()
+		cust.resize(verts.size() * 3)
+		for i in verts.size():
+			var k2 := Vector3i(roundi(verts[i].x * 500.0), roundi(verts[i].y * 500.0), roundi(verts[i].z * 500.0))
+			var n: Vector3 = acc[k2]
+			n = n.normalized() if n.length_squared() > 1e-8 else norms[i]
+			cust[i * 3] = n.x
+			cust[i * 3 + 1] = n.y
+			cust[i * 3 + 2] = n.z
+		arr[Mesh.ARRAY_CUSTOM0] = cust
+		flags = Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, flags)
 	return am
 
 

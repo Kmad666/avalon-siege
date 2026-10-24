@@ -1,12 +1,12 @@
 ; Engine configuration file.
-; Avalon Siege — gather, build, and break the Dread Citadel.
+; Fafnir's Bane — Sigurd's road to the wurm.
 
 config_version=5
 
 [application]
 
-config/name="Avalon Siege"
-config/description="Leave your castle, brave the maze, gather resources and destroy the Dread Citadel."
+config/name="Fafnir's Bane"
+config/description="Sigurd's road to Gnitaheath: a cel-shaded dark-fantasy adventure."
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
@@ -28,6 +28,6 @@ common/physics_ticks_per_second=30
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 anti_aliasing/quality/msaa_3d=0
-lights_and_shadows/directional_shadow/size=1024
+lights_and_shadows/directional_shadow/size=2048
 textures/default_filters/anisotropic_filtering_level=0
-environment/defaults/default_clear_color=Color(0.06, 0.08, 0.06, 1)
+environment/defaults/default_clear_color=Color(0.05, 0.05, 0.07, 1)

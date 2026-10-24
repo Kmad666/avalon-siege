@@ -1,44 +1,47 @@
-# Avalon Siege
+# Fafnir's Bane
 
-A low-poly isometric fantasy action RPG made in **Godot 4.7**, playable in the browser — nothing to download.
+A cel-shaded, dark-fantasy third-person adventure made in **Godot 4.7**, playable in the browser. Inspired by the legend of **Sigurd** (Siegfried) and the wurm **Fafnir**.
 
 **Play:** https://kmad666.github.io/avalon-siege/
 
-You are **Merlin**. Camelot stands fully defended in one corner of a darkened realm; the Dread Citadel looms in the other. While the two armies grind against each other on the War Lane, you and your hooded Circle of Avalon venture out — down the guarded Royal Roads, along branching trails, and into maze pockets that hide spellbooks and treasure.
+> Current build: **map preview**. There are no enemies or mechanics yet — Sigurd flies freely so the valley can be inspected as it's built.
 
-## How to play
-- **Pick a difficulty** on the title screen: Squire, Knight or Legend.
-- **Move** by clicking and holding (Diablo style) or with **WASD / arrow keys**. Merlin's **spells cast on their own** (Vampire Survivors style), led by **Chain Lightning**.
-- **Blink** (right-click or **E**): teleport a short way toward the cursor — even over a wall — once every 20 seconds. It never upgrades.
-- **The Circle of Avalon**: four hooded adepts follow you from the start, each with their own spell — **Frost** (frost bolts that slow), **Ember** (a cone of flame), **Thorn** (a briar field that roots and wounds the swarm) and **Light** (Mending Ward: heals and shields you). A fallen adept returns 15 s later.
-- **Camelot defends itself**: all five archer towers, stout walls, a mage tower and Royal Guards at every gate from the first second. Its steward keeps spending gold on miners, the army and the rest.
-- **The realm**:
-  - **The War Lane** — the single direct road between Camelot and the Citadel. Both sides feed troops into it constantly; whichever side is being pushed back sends more, so the battle surges back and forth. It's a battle of attrition: the War Lane's fallen drop no gold or soul gems.
-  - **The Royal Roads and the Kingsroad** — fast roads (you move 25% quicker on them) to treasure hubs in the far corners, each guarded by a mini-boss and a legendary hoard. **Dread garrisons** with a Garrison Captain hold every road: only cross once you can break them.
-  - **Branching trails** fork off the roads through the forest and ruins to glades and **maze pockets**. Every pocket hides a reward at its heart — a **spellbook**, a **treasure chest** or a rich **gold seam** — and the minimap marks what each holds.
-- **Fog of war**: pitch-black darkness hides everything beyond a short, ragged circle of light around Merlin. The minimap only shows foes that you, Camelot, your troops or your shrines can see.
-- **The swarm**: Dread foes are fragile but numerous.
-- **Loot equips itself**: if a drop beats what Merlin wears he puts it on, otherwise it's melted down for gold.
-- **Ley Shrines**: capture them for gold, healing and waypoint travel (**T**).
-- **The endgame**: three **Dread Wards** shield the Citadel. Bring them down, face the **Dread Lord**, and destroy the Citadel. Its **Dread Aura** halves damage to its defenders, and Merlin's spells only deal a quarter damage to the Citadel itself — the army must carry the siege.
+## The valley
+A long valley (~1 km by 190 m) walled in by mountains. The road winds from the south to the north between medium hills thick with dark pine:
 
-**Keys:** RMB / E blink · SPACE / Q potion · T waypoint travel · M map · mouse wheel zoom · P pause · F fullscreen · G graphics quality · N or the speaker button (top right) to mute
+1. **Regin's Forge** — the start: the smith's turf-roofed forge, still glowing, where Gram was remade.
+2. **The Barrows** — burial mounds with stone doorways.
+3. **The Stone Ring** — nine standing stones beside the road.
+4. **The Wurm's Pool** — the black pool where Fafnir drinks; the scorched furrow of his trail leads up to it (where Sigurd dug his pit).
+5. **Gnitaheath** — the forest withers into a blasted heath of dead trees and bones.
+6. **Fafnir's Lair** — a great cave under the northern cliffs, its hoard glinting in the dark.
+
+Runestones mark the road along the way.
+
+## Controls (preview)
+- **Click** to capture the mouse and look around · **Esc** frees the cursor (or hold right-click to look)
+- **WASD** fly · **Space / E** up · **C / Q** down · **Shift** faster · **mouse wheel** camera distance
+- **1–6** jump to a landmark · **G** graphics quality · **F** fullscreen · **N** or the speaker button to mute · **H** hide the HUD
+
+## Look
+- **Cel shading:** a custom toon shader with three hard light bands, crisp shadow edges and a hot rim light from the low sun. An **ink-outline** pass (inverted hull with smoothed normals, so hard edges don't crack) traces every model.
+- **Dark fantasy dusk:** an ember sky, a low warm sun throwing long shadows, cold blue shade and haze that swallows the far end of the valley.
+- Everything — terrain, trees, Sigurd, the forge, the lair — is low-poly geometry generated in code, coloured by vertex. No texture or model files.
 
 ## Performance
-Built for laptops with integrated graphics:
-- **GL Compatibility** renderer, no real-time shadows (blob shadows instead), per-vertex lighting.
-- All art is generated in code as flat-shaded, vertex-coloured low-poly meshes sharing one material.
-- Every unit type (both armies, miners, knights), projectile, loot drop, particle, pickup and resource type is drawn with a **single MultiMesh** — a busy fight with 200+ enemies is still only ~100 draw calls.
-- No physics engine: movement uses grid collision and Dijkstra **flow fields**, so hundreds of units path through the realm cheaply. Units "think" 5–8× per second, staggered, push apart every other frame; idle lairs far from Merlin sleep (checked one frame in four and left out of the spatial index).
-- The world is built in 17×17-tile chunks so off-screen terrain is culled, and units outside the camera's view aren't drawn at all.
-- The fog is a single full-screen shader quad; the HUD redraws at 30 Hz.
-- **Graphics quality** drops automatically if the game runs below ~42 FPS (Low renders 3D at 66% resolution and halves particles). Press **G** to cycle Low / Medium / High.
-- Sound effects are synthesised at startup — there are no asset files at all.
+Built for laptops with integrated graphics (GL Compatibility renderer):
+- Terrain is built in 64 m chunks so the camera culls what's off-screen; trees, shrubs and rocks are one **MultiMesh** per chunk per kind, with a visibility range hidden by the haze.
+- **Graphics quality** (G): *Low* = no shadows or outlines, 70% render scale · *Medium* = one shadow cascade + outlines · *High* = two cascades + MSAA. It drops automatically if the game runs below ~40 FPS.
 
 ## How it's built
-- `scripts/` — everything: `maze.gd` (generation, flow fields, collision, world meshes), `models.gd` (all low-poly models), `horde.gd` (enemies & knights), `hero.gd`, `castle.gd`, `nodes.gd` (gold veins, spellbooks), `items.gd` (loot), `landmarks.gd` (wards, shrines), `fog.gd` (fog of war), `fx.gd` (projectiles, particles, pickups), `hud.gd`, `sfx.gd`.
-- `.github/workflows/deploy.yml` exports the web build on every push to `main` and publishes it to the `gh-pages` branch, which GitHub Pages serves.
-- Exported without threads, so it runs on GitHub Pages without special headers.
+- `scripts/terrain.gd` — the valley: heightfield, path, biomes, scatter, chunked meshes
+- `scripts/props.gd` — all models (Sigurd, trees, forge, runestones, lair, hoard…)
+- `scripts/toon.gd` — the cel and outline shaders
+- `scripts/flyer.gd` — Sigurd's free flight and the chase camera
+- `scripts/main.gd` — lighting, landmarks, quality; `scripts/hud.gd` — overlay and strip map; `scripts/sfx.gd` — wind ambience; `scripts/geo.gd` — low-poly mesh builder
+- `.github/workflows/deploy.yml` exports the web build on every push to `main` and publishes it to GitHub Pages.
 
-### Test hooks
-Run the project with `-- --shots=DIR` to play on autopilot and save screenshots, `-- --defend` for a castle-defence test, or `-- --stress` to spawn 230 enemies and print per-system timings.
+The previous game in this repo, *Avalon Siege*, is preserved on the `avalon-siege-legacy` branch.
+
+### Test hook
+Run with `-- --shots=DIR` to photograph a fixed set of viewpoints across the valley.
